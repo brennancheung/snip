@@ -21,7 +21,7 @@ private func freshDefaults() -> UserDefaults {
     settings.outputDirectory = URL(fileURLWithPath: "/Users/me/Movies", isDirectory: true)
     settings.recordMicrophone = true
     settings.microphoneDeviceID = "BuiltInMicrophoneDevice"
-    settings.recordSystemAudio = true
+    settings.recordSystemAudio = false
     let decoded = try JSONDecoder().decode(RecordingSettings.self, from: JSONEncoder().encode(settings))
     #expect(decoded == settings)
 }
@@ -32,7 +32,8 @@ private func freshDefaults() -> UserDefaults {
     var expected = RecordingSettings()
     expected.crf = 30
     #expect(decoded == expected)
-    #expect(!decoded.recordMicrophone && decoded.microphoneDeviceID == nil && !decoded.recordSystemAudio)
+    // Settings saved before the audio keys existed: microphone off, system audio on.
+    #expect(!decoded.recordMicrophone && decoded.microphoneDeviceID == nil && decoded.recordSystemAudio)
 }
 
 @Test func storePersistsAndNotifies() {

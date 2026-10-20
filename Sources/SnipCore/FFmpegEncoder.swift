@@ -41,13 +41,19 @@ public struct FFmpegEncoder: RecordingEncoder {
     }
 
     /// The ffmpeg command line, without the executable. `audioStreams` is how many audio tracks the
-    /// intermediate has: none drops audio, one is encoded to AAC, more (system audio and microphone)
-    /// are mixed into one AAC track.
-    public static func arguments(intermediate: URL, output: URL, settings: RecordingSettings, audioStreams: Int = 0) -> [String] {
-        [
-            "-hide_banner",
-            "-y",
-            "-i", intermediate.path,
+    /// intermediate has (system audio); `microphone` are the spans recorded while the mic was on.
+    /// No audio drops it; one system track alone is encoded to AAC; anything more is mixed into one
+    /// stereo AAC track, each microphone span placed at its offset.
+    public static func arguments(
+        intermediate: URL,
+        output: URL,
+        settings: RecordingSettings,
+        audioStreams: Int = 0,
+        microphone: [MicrophoneSpan] = []
+    ) -> [String] {
+        ["-hide_banner", "-y", "-i", intermediate.path]
+        + microphone.flatMap { ["-i", $0.url.path] }
+        + [
             "-c:v", "libx264",
             "-crf", String(settings.crf),
             "-preset", settings.preset,
@@ -59,7 +65,7 @@ public struct FFmpegEncoder: RecordingEncoder {
             "-r", String(settings.fps),
             "-movflags", "+faststart",
         ]
-        + audioArguments(streams: audioStreams)
+        + audioArguments(streams: max(audioStreams, 0), microphone: microphone)
         + [
             "-progress", "pipe:1",
             "-nostats",
@@ -67,30 +73,44 @@ public struct FFmpegEncoder: RecordingEncoder {
         ]
     }
 
-    private static func audioArguments(streams: Int) -> [String] {
+    private static func audioArguments(streams: Int, microphone: [MicrophoneSpan]) -> [String] {
         let aac = ["-c:a", "aac", "-b:a", "160k"]
-        switch streams {
-        case ..<1:
-            return ["-an"]
-        case 1:
-            return aac
-        default:
-            // Each track to stereo first: amix otherwise takes the mono microphone's layout and folds
-            // the system audio down to mono. normalize=0 keeps each source at its own level.
-            let stereo = (0..<streams).map { "[0:a:\($0)]aformat=channel_layouts=stereo[a\($0)];" }.joined()
-            let inputs = (0..<streams).map { "[a\($0)]" }.joined()
-            return [
-                "-filter_complex", "\(stereo)\(inputs)amix=inputs=\(streams):duration=longest:normalize=0[a]",
-                "-map", "0:v:0",
-                "-map", "[a]",
-            ] + aac
+        if streams == 0 && microphone.isEmpty { return ["-an"] }
+        if streams == 1 && microphone.isEmpty { return aac }
+
+        // Every source to stereo first: amix otherwise takes the mono microphone's layout and folds
+        // the system audio down to mono.
+        let stereo = "aformat=channel_layouts=stereo"
+        var chains = (0..<streams).map { "[0:a:\($0)]\(stereo)" }
+        for (index, span) in microphone.enumerated() {
+            chains.append("[\(index + 1):a:0]\(placement(of: span))\(stereo)")
         }
+        let graph: String
+        if chains.count == 1 {
+            graph = chains[0] + "[a]"
+        } else {
+            let labels = chains.indices.map { "[s\($0)]" }
+            // normalize=0 keeps each source at its own level instead of dividing by the input count.
+            graph = zip(chains, labels).map { $0 + $1 + ";" }.joined()
+                + labels.joined() + "amix=inputs=\(chains.count):duration=longest:normalize=0[a]"
+        }
+        return ["-filter_complex", graph, "-map", "0:v:0", "-map", "[a]"] + aac
     }
 
-    /// Encodes `intermediate` to `output`, writing to a hidden temporary name in the output folder
-    /// and moving it into place only when ffmpeg succeeds. The intermediate is left for the caller.
+    /// Delays a span to its offset, or trims the part recorded before the first frame.
+    private static func placement(of span: MicrophoneSpan) -> String {
+        let milliseconds = Int((span.offset * 1000).rounded())
+        if milliseconds > 0 { return "adelay=delays=\(milliseconds):all=1," }
+        if milliseconds < 0 { return "atrim=start=\(Double(-milliseconds) / 1000),asetpts=PTS-STARTPTS," }
+        return ""
+    }
+
+    /// Encodes `intermediate`, with the `microphone` spans mixed in, to `output`, writing to a hidden
+    /// temporary name in the output folder and moving it into place only when ffmpeg succeeds. The
+    /// intermediate and the spans are left for the caller.
     public func encode(
         intermediate: URL,
+        microphone: [MicrophoneSpan],
         to output: URL,
         settings: RecordingSettings,
         progress: @escaping @Sendable (Double) -> Void
@@ -106,7 +126,10 @@ public struct FFmpegEncoder: RecordingEncoder {
             ffmpeg: ffmpegURL,
             input: intermediate,
             arguments: { audioStreams in
-                Self.arguments(intermediate: intermediate, output: partial, settings: settings, audioStreams: audioStreams)
+                Self.arguments(
+                    intermediate: intermediate, output: partial, settings: settings,
+                    audioStreams: audioStreams, microphone: microphone
+                )
             }
         )
         do {
