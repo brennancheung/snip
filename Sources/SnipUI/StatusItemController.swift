@@ -55,13 +55,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let idle = state == .idle
 
         let spec = hotKey()
-        let newRecording = NSMenuItem(title: "New Recording", action: #selector(newRecording), keyEquivalent: "")
+        let newItem = NSMenuItem(title: "New Recording", action: #selector(newRecording), keyEquivalent: "")
         if let key = KeyCombo.keyEquivalent(keyCode: spec.keyCode) {
-            newRecording.keyEquivalent = key
-            newRecording.keyEquivalentModifierMask = KeyCombo.modifierFlags(carbon: spec.carbonModifiers)
+            newItem.keyEquivalent = key
+            newItem.keyEquivalentModifierMask = KeyCombo.modifierFlags(carbon: spec.carbonModifiers)
         }
-        newRecording.isEnabled = idle
-        add(newRecording)
+        newItem.isEnabled = idle
+        add(newItem)
 
         let last = NSMenuItem(title: "Record Last Area", action: #selector(recordLastArea), keyEquivalent: "")
         last.isEnabled = idle && hasLastArea()
