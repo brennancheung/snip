@@ -75,10 +75,12 @@ public struct FFmpegEncoder: RecordingEncoder {
         case 1:
             return aac
         default:
-            let inputs = (0..<streams).map { "[0:a:\($0)]" }.joined()
+            // Each track to stereo first: amix otherwise takes the mono microphone's layout and folds
+            // the system audio down to mono. normalize=0 keeps each source at its own level.
+            let stereo = (0..<streams).map { "[0:a:\($0)]aformat=channel_layouts=stereo[a\($0)];" }.joined()
+            let inputs = (0..<streams).map { "[a\($0)]" }.joined()
             return [
-                // normalize=0 keeps each source at its own level instead of dividing by the input count.
-                "-filter_complex", "\(inputs)amix=inputs=\(streams):duration=longest:normalize=0[a]",
+                "-filter_complex", "\(stereo)\(inputs)amix=inputs=\(streams):duration=longest:normalize=0[a]",
                 "-map", "0:v:0",
                 "-map", "[a]",
             ] + aac

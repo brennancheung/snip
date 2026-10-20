@@ -50,7 +50,9 @@ func argumentsCarryCRFPresetAndFPS(crf: Int, preset: String, fps: Int) {
     )
     #expect(!args.contains("-an"))
     #expect(args.containsSequence([
-        "-filter_complex", "[0:a:0][0:a:1]amix=inputs=2:duration=longest:normalize=0[a]",
+        "-filter_complex",
+        "[0:a:0]aformat=channel_layouts=stereo[a0];[0:a:1]aformat=channel_layouts=stereo[a1];"
+            + "[a0][a1]amix=inputs=2:duration=longest:normalize=0[a]",
         "-map", "0:v:0", "-map", "[a]",
         "-c:a", "aac", "-b:a", "160k",
     ]))
@@ -157,28 +159,30 @@ func generateClip(_ ffmpeg: URL, to url: URL, tones: [Int]) throws {
     try #require(generate.terminationStatus == 0)
 }
 
-/// The output's streams as ffprobe lists them, e.g. ["video h264", "audio aac"].
+/// The output's streams as ffprobe lists them, e.g. ["video h264", "audio aac 2ch"].
 func streams(of url: URL, ffmpeg: URL) throws -> [String] {
     let probe = Process()
     probe.executableURL = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")
-    probe.arguments = ["-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "csv=p=0", url.path]
+    probe.arguments = ["-v", "error", "-show_entries", "stream=codec_type,codec_name,channels", "-of", "json", url.path]
     let stdout = Pipe()
     probe.standardOutput = stdout
     try probe.run()
     let data = stdout.fileHandleForReading.readDataToEndOfFile()
     probe.waitUntilExit()
-    // csv prints codec_name,codec_type in the order ffprobe holds them; normalise to "type name".
-    return String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).map { line in
-        let fields = line.split(separator: ",").map(String.init)
-        return fields.count == 2 ? "\(fields[1]) \(fields[0])" : String(line)
+    let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let streams = try #require(json["streams"] as? [[String: Any]])
+    return streams.map { stream in
+        let description = "\(stream["codec_type"] ?? "?") \(stream["codec_name"] ?? "?")"
+        guard let channels = stream["channels"] else { return description }
+        return description + " \(channels)ch"
     }
 }
 
 @Test(
     .enabled(if: FFmpegEncoder.locate() != nil, "ffmpeg is not installed"),
-    arguments: [[], [440], [440, 660]]
+    arguments: [([], nil), ([440], "audio aac 1ch"), ([440, 660], "audio aac 2ch")] as [([Int], String?)]
 )
-func encodesAudioToOneAACTrack(tones: [Int]) async throws {
+func encodesAudioToOneAACTrack(tones: [Int], audio: String?) async throws {
     let ffmpeg = try #require(FFmpegEncoder.locate())
     let directory = try temporaryDirectory()
     let intermediate = directory.appendingPathComponent("clip.mov")
@@ -187,8 +191,8 @@ func encodesAudioToOneAACTrack(tones: [Int]) async throws {
     try await FFmpegEncoder(ffmpegURL: ffmpeg).encode(
         intermediate: intermediate, to: output, settings: RecordingSettings(), progress: { _ in }
     )
-    let expected = tones.isEmpty ? ["video h264"] : ["video h264", "audio aac"]
-    #expect(try streams(of: output, ffmpeg: ffmpeg) == expected)
+    // A mono microphone alone stays mono; mixed with stereo system audio it is stereo.
+    #expect(try streams(of: output, ffmpeg: ffmpeg) == ["video h264"] + (audio.map { [$0] } ?? []))
 }
 
 extension Array where Element: Equatable {
