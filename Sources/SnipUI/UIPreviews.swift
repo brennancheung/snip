@@ -95,7 +95,7 @@ public enum UIPreviews {
 
     /// The recording pill at 0:12, or compressing at 60%.
     static func pill(_ ui: UIScale, compressing: Bool) -> NSView {
-        let pill = RecordingPill(systemAudio: true, scale: ui)
+        let pill = RecordingPill(scale: ui)
         keptAlive.append(pill)
         pill.setElapsed(12)
         return pill.previewView(compressing: compressing)
