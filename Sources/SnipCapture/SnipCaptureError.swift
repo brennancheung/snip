@@ -20,6 +20,8 @@ public enum SnipCaptureError: LocalizedError, Sendable, Equatable {
     case recordingFailed(String)
     /// The recording output never reported that the file was finished.
     case finishTimedOut
+    /// The microphone couldn't be opened.
+    case microphoneFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -45,6 +47,8 @@ public enum SnipCaptureError: LocalizedError, Sendable, Equatable {
             return "Writing the recording failed: \(reason)"
         case .finishTimedOut:
             return "The recording didn't finish writing in time; the file may be incomplete."
+        case .microphoneFailed(let reason):
+            return "The microphone couldn't be recorded: \(reason)"
         }
     }
 

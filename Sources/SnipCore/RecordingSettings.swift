@@ -24,7 +24,7 @@ public struct RecordingSettings: Sendable, Codable, Equatable {
     public var recordMicrophone: Bool = false
     /// The microphone's `AVCaptureDevice.uniqueID`. nil means the system default input.
     public var microphoneDeviceID: String? = nil
-    public var recordSystemAudio: Bool = false
+    public var recordSystemAudio: Bool = true
 
     public init() {}
 

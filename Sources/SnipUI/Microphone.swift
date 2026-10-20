@@ -27,18 +27,19 @@ enum Microphone {
         return deviceID
     }
 
-    /// Turns the microphone on in the saved settings, with `deviceID` when given. The first time,
-    /// this asks for microphone access; if it is refused, the setting goes back off with an alert.
+    /// Turns the microphone on in the saved settings, with `deviceID` when given, once Snip may use it.
+    /// The first time, this asks for microphone access; if it is refused, the setting stays off and an
+    /// alert says where to turn it on. A recording in progress follows the setting (AppController).
     static func turnOn(deviceID: String? = nil) {
-        var settings = SettingsStore.shared.settings
-        settings.recordMicrophone = true
-        if let deviceID { settings.microphoneDeviceID = deviceID }
-        SettingsStore.shared.settings = settings
-
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
+            setOn(deviceID: deviceID)
+            return
+        }
         Task {
-            let granted = await hasAccess()
-            guard !granted else { return }
-            SettingsStore.shared.settings.recordMicrophone = false
+            if await hasAccess() {
+                setOn(deviceID: deviceID)
+                return
+            }
             let alert = NSAlert()
             alert.messageText = "Snip can’t use the microphone"
             alert.informativeText = "Turn on Snip in System Settings › Privacy & Security › Microphone."
@@ -49,6 +50,17 @@ enum Microphone {
 
     static func turnOff() {
         SettingsStore.shared.settings.recordMicrophone = false
+    }
+
+    static func toggle() {
+        if SettingsStore.shared.settings.recordMicrophone { turnOff() } else { turnOn() }
+    }
+
+    private static func setOn(deviceID: String?) {
+        var settings = SettingsStore.shared.settings
+        settings.recordMicrophone = true
+        if let deviceID { settings.microphoneDeviceID = deviceID }
+        SettingsStore.shared.settings = settings
     }
 
     /// Shows the system prompt if the user hasn't been asked yet.

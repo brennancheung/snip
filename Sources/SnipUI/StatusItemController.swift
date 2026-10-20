@@ -142,7 +142,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func settings() { onSettings?() }
 
     @objc private func toggleMicrophone() {
-        if SettingsStore.shared.settings.recordMicrophone { Microphone.turnOff() } else { Microphone.turnOn() }
+        Microphone.toggle()
     }
 
     @objc private func toggleSystemAudio() {

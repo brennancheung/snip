@@ -14,7 +14,7 @@ enum Help {
       snip-cli displays
       snip-cli record (--window <id> | --rect x,y,w,h [--display <id>] | --display <id>)
                       [--seconds 5] [--fps 30] [--crf 23] [--scale full|half] [--no-cursor]
-                      [--mic] [--system-audio] [--out <path>]
+                      [--mic] [--mic-toggles <s,s,...>] [--no-system-audio] [--keep] [--out <path>]
 
       windows   lists recordable windows, front to back: id, app, title, size in points.
       displays  lists displays: id, size in points, pixel scale.
@@ -24,8 +24,10 @@ enum Help {
                 ffmpeg the uncompressed .mov is kept instead.
                 --rect is in points, top-left origin, relative to the display (the main display
                 unless --display is given).
-                --mic records the default microphone, --system-audio what the Mac plays; with
-                both they are mixed into one AAC track.
+                System audio is recorded unless --no-system-audio. --mic records the default
+                microphone; --mic-toggles flips it on or off at those seconds (e.g. 2,4: on at
+                2 s, off at 4 s without --mic). Everything is mixed into one AAC track.
+                --keep leaves the intermediate movie and microphone files in place.
     """
 }
 
@@ -117,6 +119,9 @@ struct RecordOptions {
     var seconds: Double = 5
     var settings = RecordingSettings()
     var out: String?
+    /// Seconds after the start at which the microphone flips.
+    var micToggles: [Double] = []
+    var keep = false
 
     var target: CaptureTarget {
         if let windowID {
@@ -165,6 +170,13 @@ func parseRecordOptions(_ arguments: [String]) -> RecordOptions {
         case "--no-cursor": options.settings.showCursor = false
         case "--mic": options.settings.recordMicrophone = true
         case "--system-audio": options.settings.recordSystemAudio = true
+        case "--no-system-audio": options.settings.recordSystemAudio = false
+        case "--mic-toggles":
+            let text = value(flag)
+            let times = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard !times.isEmpty, times.allSatisfy({ $0 > 0 }) else { fail("--mic-toggles wants seconds, e.g. 2,4") }
+            options.micToggles = times.sorted()
+        case "--keep": options.keep = true
         case "--out": options.out = value(flag)
         case "-h", "--help": print(Help.usage); exit(0)
         default: fail("unknown option \(flag)\n\n\(Help.usage)")
@@ -222,7 +234,7 @@ func record(_ arguments: [String]) async {
     let settings = options.settings
     let intermediate = OutputNaming.intermediateURL()
 
-    if settings.recordMicrophone {
+    if settings.recordMicrophone || !options.micToggles.isEmpty {
         let granted = await AVCaptureDevice.requestAccess(for: .audio)
         if !granted { failMicrophonePermission() }
     }
@@ -248,25 +260,41 @@ func record(_ arguments: [String]) async {
     if options.seconds > 0 {
         DispatchQueue.global().asyncAfter(deadline: .now() + options.seconds) { stop.fire("time") }
     }
+    for (index, seconds) in options.micToggles.enumerated() {
+        let on = settings.recordMicrophone != index.isMultiple(of: 2)
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            do {
+                try await recorder.setMicrophone(on, deviceID: nil)
+                printError("Microphone \(on ? "on" : "off") at \(seconds)s")
+            } catch {
+                printError("Microphone \(on ? "on" : "off") at \(seconds)s failed: \(error.localizedDescription)")
+            }
+        }
+    }
 
     let reason = await stop.wait()
     if reason != "time" { printError("Stopping: \(reason)") }
     interrupt.cancel()
     signal(SIGINT, SIG_DFL)
 
-    let url: URL
+    let media: RecordedMedia
     do {
-        url = try await recorder.stop()
+        media = try await recorder.stop()
     } catch {
         report(error)
     }
-    printError("Intermediate: \(url.path) (\(formatBytes(url)))")
-    await compress(url, out: options.out, settings: settings)
+    printError("Intermediate: \(media.movie.path) (\(formatBytes(media.movie)))")
+    for span in media.microphone {
+        printError("Microphone: \(span.url.path) at \(String(format: "%.3f", span.offset))s (\(formatBytes(span.url)))")
+    }
+    await compress(media, out: options.out, settings: settings, keep: options.keep)
 }
 
 /// Encodes the intermediate to `--out` (a file, or a folder to name it in), or to a new
 /// "Snip <date>.mp4" in the output folder. Prints the final path on stdout.
-func compress(_ intermediate: URL, out: String?, settings: RecordingSettings) async {
+func compress(_ media: RecordedMedia, out: String?, settings: RecordingSettings, keep: Bool) async {
+    let intermediate = media.movie
     let output: URL
     if let out {
         var isDirectory: ObjCBool = false
@@ -283,12 +311,14 @@ func compress(_ intermediate: URL, out: String?, settings: RecordingSettings) as
 
     let started = Date()
     do {
-        try await FFmpegEncoder().encode(intermediate: intermediate, to: output, settings: settings) { progress in
+        try await FFmpegEncoder().encode(
+            intermediate: intermediate, microphone: media.microphone, to: output, settings: settings
+        ) { progress in
             FileHandle.standardError.write(Data(String(format: "\rCompressing… %3d%%", Int(progress * 100)).utf8))
         }
         let seconds = String(format: "%.1f", Date().timeIntervalSince(started))
         printError("\rCompressed in \(seconds)s: \(formatBytes(output))")
-        try? FileManager.default.removeItem(at: intermediate)
+        if !keep { media.remove() }
         print(output.path)
     } catch EncodeError.ffmpegMissing {
         printError("ffmpeg wasn't found (brew install ffmpeg); keeping the uncompressed recording.")

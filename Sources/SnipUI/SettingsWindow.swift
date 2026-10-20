@@ -75,6 +75,8 @@ final class SettingsModel: ObservableObject {
             return (chosen ?? microphones.first)?.id
         }
         set {
+            // Redrawn either way: turning on waits for microphone access and may not happen.
+            objectWillChange.send()
             if let newValue { Microphone.turnOn(deviceID: newValue) } else { Microphone.turnOff() }
         }
     }

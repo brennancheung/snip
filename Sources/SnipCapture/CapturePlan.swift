@@ -81,15 +81,15 @@ struct CapturePlan {
         configuration.colorSpaceName = CGColorSpace.sRGB
         configuration.capturesAudio = settings.recordSystemAudio
         if settings.recordSystemAudio {
-            configuration.excludesCurrentProcessAudio = true
+            // Only in Snip.app. From a terminal (snip-cli) the terminal counts as this process, so it
+            // would also drop the audio of everything started there (afplay, say). Snip's own sounds
+            // are left out by the display filter anyway, and a window recording only hears its app.
+            configuration.excludesCurrentProcessAudio = Bundle.main.bundleURL.pathExtension == "app"
             configuration.sampleRate = 48_000
             configuration.channelCount = 2
         }
-        configuration.captureMicrophone = settings.recordMicrophone
-        if settings.recordMicrophone {
-            // nil records the system default input.
-            configuration.microphoneCaptureDeviceID = settings.microphoneDeviceID
-        }
+        // The microphone is recorded by MicrophoneSpans instead, so it can go on and off mid-recording.
+        configuration.captureMicrophone = false
         return configuration
     }
 

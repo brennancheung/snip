@@ -41,13 +41,19 @@ public struct FFmpegEncoder: RecordingEncoder {
     }
 
     /// The ffmpeg command line, without the executable. `audioStreams` is how many audio tracks the
-    /// intermediate has: none drops audio, one is encoded to AAC, more (system audio and microphone)
-    /// are mixed into one AAC track.
-    public static func arguments(intermediate: URL, output: URL, settings: RecordingSettings, audioStreams: Int = 0) -> [String] {
-        [
-            "-hide_banner",
-            "-y",
-            "-i", intermediate.path,
+    /// intermediate has (system audio); `microphone` are the spans recorded while the mic was on.
+    /// No audio drops it; one system track alone is encoded to AAC; anything more is mixed into one
+    /// stereo AAC track, each microphone span placed at its offset.
+    public static func arguments(
+        intermediate: URL,
+        output: URL,
+        settings: RecordingSettings,
+        audioStreams: Int = 0,
+        microphone: [MicrophoneSpan] = []
+    ) -> [String] {
+        ["-hide_banner", "-y", "-i", intermediate.path]
+        + microphone.flatMap { ["-i", $0.url.path] }
+        + [
             "-c:v", "libx264",
             "-crf", String(settings.crf),
             "-preset", settings.preset,
@@ -59,7 +65,7 @@ public struct FFmpegEncoder: RecordingEncoder {
             "-r", String(settings.fps),
             "-movflags", "+faststart",
         ]
-        + audioArguments(streams: audioStreams)
+        + audioArguments(streams: max(audioStreams, 0), microphone: microphone)
         + [
             "-progress", "pipe:1",
             "-nostats",
@@ -67,30 +73,44 @@ public struct FFmpegEncoder: RecordingEncoder {
         ]
     }
 
-    private static func audioArguments(streams: Int) -> [String] {
+    private static func audioArguments(streams: Int, microphone: [MicrophoneSpan]) -> [String] {
         let aac = ["-c:a", "aac", "-b:a", "160k"]
-        switch streams {
-        case ..<1:
-            return ["-an"]
-        case 1:
-            return aac
-        default:
-            // Each track to stereo first: amix otherwise takes the mono microphone's layout and folds
-            // the system audio down to mono. normalize=0 keeps each source at its own level.
-            let stereo = (0..<streams).map { "[0:a:\($0)]aformat=channel_layouts=stereo[a\($0)];" }.joined()
-            let inputs = (0..<streams).map { "[a\($0)]" }.joined()
-            return [
-                "-filter_complex", "\(stereo)\(inputs)amix=inputs=\(streams):duration=longest:normalize=0[a]",
-                "-map", "0:v:0",
-                "-map", "[a]",
-            ] + aac
+        if streams == 0 && microphone.isEmpty { return ["-an"] }
+        if streams == 1 && microphone.isEmpty { return aac }
+
+        // Every source to stereo first: amix otherwise takes the mono microphone's layout and folds
+        // the system audio down to mono.
+        let stereo = "aformat=channel_layouts=stereo"
+        var chains = (0..<streams).map { "[0:a:\($0)]\(stereo)" }
+        for (index, span) in microphone.enumerated() {
+            chains.append("[\(index + 1):a:0]\(placement(of: span))\(stereo)")
         }
+        let graph: String
+        if chains.count == 1 {
+            graph = chains[0] + "[a]"
+        } else {
+            let labels = chains.indices.map { "[s\($0)]" }
+            // normalize=0 keeps each source at its own level instead of dividing by the input count.
+            graph = zip(chains, labels).map { $0 + $1 + ";" }.joined()
+                + labels.joined() + "amix=inputs=\(chains.count):duration=longest:normalize=0[a]"
+        }
+        return ["-filter_complex", graph, "-map", "0:v:0", "-map", "[a]"] + aac
     }
 
-    /// Encodes `intermediate` to `output`, writing to a hidden temporary name in the output folder
-    /// and moving it into place only when ffmpeg succeeds. The intermediate is left for the caller.
+    /// Delays a span to its offset, or trims the part recorded before the first frame.
+    private static func placement(of span: MicrophoneSpan) -> String {
+        let milliseconds = Int((span.offset * 1000).rounded())
+        if milliseconds > 0 { return "adelay=delays=\(milliseconds):all=1," }
+        if milliseconds < 0 { return "atrim=start=\(Double(-milliseconds) / 1000),asetpts=PTS-STARTPTS," }
+        return ""
+    }
+
+    /// Encodes `intermediate`, with the `microphone` spans mixed in, to `output`, writing to a hidden
+    /// temporary name in the output folder and moving it into place only when ffmpeg succeeds. The
+    /// intermediate and the spans are left for the caller.
     public func encode(
         intermediate: URL,
+        microphone: [MicrophoneSpan],
         to output: URL,
         settings: RecordingSettings,
         progress: @escaping @Sendable (Double) -> Void
@@ -105,8 +125,13 @@ public struct FFmpegEncoder: RecordingEncoder {
         let run = FFmpegRun(
             ffmpeg: ffmpegURL,
             input: intermediate,
-            arguments: { audioStreams in
-                Self.arguments(intermediate: intermediate, output: partial, settings: settings, audioStreams: audioStreams)
+            arguments: { probe in
+                // Spans are placed against the first frame; the file may start a little earlier.
+                let placed = microphone.map { MicrophoneSpan(url: $0.url, offset: $0.offset + probe.videoLead) }
+                return Self.arguments(
+                    intermediate: intermediate, output: partial, settings: settings,
+                    audioStreams: probe.audioStreams, microphone: placed
+                )
             }
         )
         do {
@@ -172,39 +197,57 @@ struct ProgressParser {
     }
 }
 
-/// What ffprobe says about the intermediate: its duration and how many audio tracks it has.
+/// What ffprobe says about the intermediate: its duration, how many audio tracks it has, and how
+/// far the video starts after the earliest track.
 struct InputProbe: Equatable {
     var durationSeconds: Double?
     var audioStreams: Int
+    /// Seconds from the file's start (its earliest track) to the first video frame. The microphone
+    /// spans are placed against the first frame, so they move by this much.
+    var videoLead: Double = 0
 
     /// Without ffprobe the audio tracks are unknown: one keeps the first track, if there is one.
     static let unknown = InputProbe(durationSeconds: nil, audioStreams: 1)
 
     static let ffprobeArguments = [
         "-v", "error",
-        "-show_entries", "format=duration:stream=codec_type",
-        "-of", "default=noprint_wrappers=1",
+        "-show_entries", "format=duration:stream=codec_type,start_time",
+        "-of", "compact",
     ]
 
-    /// Parses ffprobe's `key=value` lines (`codec_type=video`, `codec_type=audio`, `duration=2.0`).
+    /// Parses ffprobe's compact lines: `stream|codec_type=video|start_time=0.033`, `format|duration=2.0`.
     init(ffprobeOutput: String) {
         var duration: Double?
         var audio = 0
+        var videoStart: Double?
+        var earliestStart: Double?
         for line in ffprobeOutput.split(whereSeparator: \.isNewline) {
-            let parts = line.trimmingCharacters(in: .whitespaces).split(separator: "=", maxSplits: 1)
-            guard parts.count == 2 else { continue }
-            switch parts[0] {
-            case "codec_type" where parts[1] == "audio": audio += 1
-            case "duration": duration = Double(parts[1])
+            var fields: [Substring: Substring] = [:]
+            for field in line.split(separator: "|").dropFirst() {
+                let parts = field.split(separator: "=", maxSplits: 1)
+                if parts.count == 2 { fields[parts[0]] = parts[1] }
+            }
+            if line.hasPrefix("format|") {
+                duration = fields["duration"].flatMap { Double($0) }
+                continue
+            }
+            let start = fields["start_time"].flatMap { Double($0) }
+            if let start { earliestStart = min(earliestStart ?? start, start) }
+            switch fields["codec_type"] {
+            case "audio": audio += 1
+            case "video" where videoStart == nil: videoStart = start
             default: break
             }
         }
-        self.init(durationSeconds: duration, audioStreams: audio)
+        var lead = 0.0
+        if let videoStart, let earliestStart { lead = max(videoStart - earliestStart, 0) }
+        self.init(durationSeconds: duration, audioStreams: audio, videoLead: lead)
     }
 
-    init(durationSeconds: Double?, audioStreams: Int) {
+    init(durationSeconds: Double?, audioStreams: Int, videoLead: Double = 0) {
         self.durationSeconds = durationSeconds
         self.audioStreams = audioStreams
+        self.videoLead = videoLead
     }
 }
 
@@ -212,13 +255,13 @@ struct InputProbe: Equatable {
 private final class FFmpegRun: @unchecked Sendable {
     private let ffmpeg: URL
     private let input: URL
-    /// The command line for the number of audio tracks the input has.
-    private let arguments: @Sendable (Int) -> [String]
+    /// The command line for what ffprobe found in the input.
+    private let arguments: @Sendable (InputProbe) -> [String]
     private let lock = NSLock()
     private var process: Process?
     private var cancelled = false
 
-    init(ffmpeg: URL, input: URL, arguments: @escaping @Sendable (Int) -> [String]) {
+    init(ffmpeg: URL, input: URL, arguments: @escaping @Sendable (InputProbe) -> [String]) {
         self.ffmpeg = ffmpeg
         self.input = input
         self.arguments = arguments
@@ -250,7 +293,7 @@ private final class FFmpegRun: @unchecked Sendable {
 
         let process = Process()
         process.executableURL = ffmpeg
-        process.arguments = arguments(probe.audioStreams)
+        process.arguments = arguments(probe)
         process.standardInput = FileHandle.nullDevice
         let stdout = Pipe()
         let stderr = Pipe()
@@ -291,7 +334,7 @@ private final class FFmpegRun: @unchecked Sendable {
         }
     }
 
-    /// The input's duration and audio track count from the ffprobe next to ffmpeg, or
+    /// The input's duration, audio tracks and video lead from the ffprobe next to ffmpeg, or
     /// `InputProbe.unknown` (progress then only reports completion).
     private func probeInput() -> InputProbe {
         let ffprobe = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")

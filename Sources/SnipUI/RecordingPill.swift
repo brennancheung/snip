@@ -1,8 +1,8 @@
 import AppKit
 import SnipCore
 
-/// The floating HUD while recording: ● 0:12, Stop, Discard, with a mic glyph before the time
-/// while the microphone is recorded. During encoding it becomes
+/// The floating HUD while recording: ● 0:12, the microphone and system audio toggles, Stop,
+/// Discard. During encoding it becomes
 /// "Compressing…" with a thin progress bar. Draggable; never takes focus.
 @MainActor
 final class RecordingPill: NSObject {
@@ -39,8 +39,8 @@ final class RecordingPill: NSObject {
     private let progressBar = NSProgressIndicator()
     private var userMoved = false
 
-    /// `microphone`: the microphone is being recorded.
-    init(microphone: Bool) {
+    /// `systemAudio`: whether system audio is being recorded (it can't change mid-recording).
+    init(systemAudio: Bool) {
         super.init()
         panel.configureAsSnipOverlay(level: .statusBar)
         panel.hasShadow = true
@@ -62,14 +62,11 @@ final class RecordingPill: NSObject {
         discard.toolTip = "Discard"
         discard.contentTintColor = .secondaryLabelColor
 
-        let mic = NSImageView(image: NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Microphone on")!)
-        mic.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        mic.contentTintColor = .secondaryLabelColor
-        mic.isHidden = !microphone
+        let audio = AudioToggles(recordingSystemAudio: systemAudio)
 
-        recordingRow.setViews([dot, mic, timeLabel, stop, discard], in: .leading)
+        recordingRow.setViews([dot, timeLabel, audio, stop, discard], in: .leading)
         recordingRow.spacing = 8
-        recordingRow.setCustomSpacing(12, after: timeLabel)
+        recordingRow.setCustomSpacing(12, after: audio)
 
         let compressing = NSTextField(labelWithString: "Compressing…")
         compressing.font = .systemFont(ofSize: 12, weight: .medium)
