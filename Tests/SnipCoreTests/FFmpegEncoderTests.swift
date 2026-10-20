@@ -100,10 +100,17 @@ func argumentsCarryCRFPresetAndFPS(crf: Int, preset: String, fps: Int) {
 }
 
 @Test func probeOutputCountsAudioStreams() {
-    let both = InputProbe(ffprobeOutput: "codec_type=video\ncodec_type=audio\ncodec_type=audio\nduration=4.250000\n")
-    #expect(both == InputProbe(durationSeconds: 4.25, audioStreams: 2))
-    let silent = InputProbe(ffprobeOutput: "codec_type=video\nduration=N/A\n")
-    #expect(silent == InputProbe(durationSeconds: nil, audioStreams: 0))
+    let both = InputProbe(ffprobeOutput: """
+        stream|codec_type=video|start_time=0.040000
+        stream|codec_type=audio|start_time=0.000000
+        stream|codec_type=audio|start_time=0.010000
+        format|duration=4.250000
+        """)
+    #expect(both.audioStreams == 2)
+    #expect(both.durationSeconds == 4.25)
+    #expect(abs(both.videoLead - 0.04) < 1e-9)
+    let silent = InputProbe(ffprobeOutput: "stream|codec_type=video|start_time=N/A\nformat|duration=N/A\n")
+    #expect(silent == InputProbe(durationSeconds: nil, audioStreams: 0, videoLead: 0))
 }
 
 @Test func progressLinesBecomeFractions() {
@@ -254,16 +261,22 @@ func toneVolume(_ url: URL, ffmpeg: URL, frequency: Int, from start: Double, to 
     return try #require(Double(value.trimmingCharacters(in: .whitespaces)))
 }
 
-@Test(.enabled(if: FFmpegEncoder.locate() != nil, "ffmpeg is not installed"))
-func microphoneSpanIsHeardOnlyWhereItWasOn() async throws {
+/// `videoDelay`: the first frame comes that long after the system audio starts, as when
+/// ScreenCaptureKit writes audio before the first frame. `offset`: the span's offset from that frame.
+@Test(
+    .enabled(if: FFmpegEncoder.locate() != nil, "ffmpeg is not installed"),
+    arguments: [(0.0, 1.0), (0.5, 0.0)]
+)
+func microphoneSpanIsHeardOnlyWhereItWasOn(videoDelay: Double, offset: Double) async throws {
     let ffmpeg = try #require(FFmpegEncoder.locate())
     let directory = try temporaryDirectory()
-    // Three seconds of video with a 660 Hz system tone, and a one-second 440 Hz microphone span.
+    // Three seconds of 660 Hz system audio with the video, and a one-second 440 Hz microphone span.
     let intermediate = directory.appendingPathComponent("clip.mov")
     let generate = Process()
     generate.executableURL = ffmpeg
     generate.arguments = [
-        "-v", "error", "-f", "lavfi", "-i", "testsrc=duration=3:size=320x240:rate=30",
+        "-v", "error", "-itsoffset", String(videoDelay),
+        "-f", "lavfi", "-i", "testsrc=duration=\(3 - videoDelay):size=320x240:rate=30",
         "-f", "lavfi", "-i", "sine=frequency=660:duration=3:sample_rate=48000,aformat=channel_layouts=stereo",
         "-c:a", "pcm_s16le", intermediate.path,
     ]
@@ -279,16 +292,19 @@ func microphoneSpanIsHeardOnlyWhereItWasOn() async throws {
 
     let output = directory.appendingPathComponent("out.mp4")
     try await FFmpegEncoder(ffmpegURL: ffmpeg).encode(
-        intermediate: intermediate, microphone: [MicrophoneSpan(url: span, offset: 1)],
+        intermediate: intermediate, microphone: [MicrophoneSpan(url: span, offset: offset)],
         to: output, settings: RecordingSettings(), progress: { _ in }
     )
     #expect(try streams(of: output, ffmpeg: ffmpeg) == ["video h264", "audio aac 2ch"])
-    let before = try toneVolume(output, ffmpeg: ffmpeg, frequency: 440, from: 0.1, to: 0.9)
-    let during = try toneVolume(output, ffmpeg: ffmpeg, frequency: 440, from: 1.1, to: 1.9)
-    let after = try toneVolume(output, ffmpeg: ffmpeg, frequency: 440, from: 2.1, to: 2.9)
-    let system = try toneVolume(output, ffmpeg: ffmpeg, frequency: 660, from: 0.1, to: 2.9)
-    #expect(during > before + 20)
+    let heard = videoDelay + offset
+    let during = try toneVolume(output, ffmpeg: ffmpeg, frequency: 440, from: heard + 0.1, to: heard + 0.9)
+    let after = try toneVolume(output, ffmpeg: ffmpeg, frequency: 440, from: heard + 1.1, to: heard + 1.9)
     #expect(during > after + 20)
+    if heard >= 0.5 {
+        let before = try toneVolume(output, ffmpeg: ffmpeg, frequency: 440, from: 0.1, to: heard - 0.1)
+        #expect(during > before + 20)
+    }
+    let system = try toneVolume(output, ffmpeg: ffmpeg, frequency: 660, from: 0.1, to: 2.9)
     #expect(system > -40)
 }
 

@@ -150,7 +150,11 @@ extension RecordingSession: SCStreamOutput {
     /// line the microphone spans up with the movie.
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen, lock.withLock({ firstFrame == nil }), Self.isComplete(sampleBuffer) else { return }
-        let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        // On the host clock, like the microphone spans' times.
+        var time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        if let clock = stream.synchronizationClock {
+            time = CMSyncConvertTime(time, from: clock, to: CMClockGetHostTimeClock())
+        }
         lock.withLock {
             if firstFrame == nil { firstFrame = time }
         }

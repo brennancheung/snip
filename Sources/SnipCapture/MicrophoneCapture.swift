@@ -131,8 +131,6 @@ actor MicrophoneSpans {
         baseURL = movieURL.deletingPathExtension()
     }
 
-    var isOn: Bool { current != nil }
-
     func turnOn(deviceID: String?) throws {
         guard current == nil else { return }
         count += 1
