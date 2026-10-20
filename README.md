@@ -26,5 +26,11 @@ swift test
 bin/build-app        # build/Snip.app, signed
 ```
 
+`bin/build-app` signs with `SNIP_SIGN_IDENTITY` if it is set, else with the "Snip Local Signing"
+certificate if `security find-identity -p codesigning` lists it (a self-signed certificate in the
+login keychain), else ad hoc, and prints which one it used. Screen Recording permission is tied to
+the signature, so with a stable identity it survives rebuilds; ad hoc, macOS asks again after
+every rebuild.
+
 The first run asks for Screen Recording permission (System Settings › Privacy & Security), and
 turning the microphone on the first time asks for Microphone permission.
