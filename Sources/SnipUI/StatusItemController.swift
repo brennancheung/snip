@@ -30,11 +30,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         self.state = state
         guard let button = item.button else { return }
         switch state {
-        case .recording(let startedAt):
+        case .recording:
+            // A red stop square only; the pill shows the time.
             item.menu = nil
-            button.image = Self.symbol("record.circle.fill")
+            button.image = Self.symbol("stop.fill")
             button.contentTintColor = .systemRed
-            setTitle(RecordingPill.formatElapsed(Int(Date().timeIntervalSince(startedAt))))
+            setTitle("")
         case .encoding(let progress):
             item.menu = menu
             button.image = Self.symbol("record.circle")
@@ -71,8 +72,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if !recents.isEmpty {
             menu.addItem(.separator())
             for recent in recents {
-                let entry = NSMenuItem(title: recent.url.lastPathComponent, action: #selector(revealRecent(_:)), keyEquivalent: "")
-                entry.subtitle = ByteCountFormatter.string(fromByteCount: recent.sizeBytes, countStyle: .file)
+                let size = ByteCountFormatter.string(fromByteCount: recent.sizeBytes, countStyle: .file)
+                let title = "\(Self.recentDate(recent.date)) · \(size)"
+                let entry = NSMenuItem(title: title, action: #selector(revealRecent(_:)), keyEquivalent: "")
+                entry.toolTip = recent.url.lastPathComponent
                 entry.representedObject = recent.url
                 add(entry)
             }
@@ -95,6 +98,24 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             string: title.isEmpty ? "" : " \(title)",
             attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)]
         )
+    }
+
+    /// "Today 13.48", "Yesterday 16.30", "Oct 17 09.12", or "Oct 17 2025 09.12" before this year.
+    static func recentDate(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "HH.mm"
+        let time = formatter.string(from: date)
+        if calendar.isDate(date, inSameDayAs: now) { return "Today \(time)" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday \(time)"
+        }
+        let sameYear = calendar.isDate(date, equalTo: now, toGranularity: .year)
+        formatter.dateFormat = sameYear ? "MMM d" : "MMM d yyyy"
+        return "\(formatter.string(from: date)) \(time)"
     }
 
     private static func symbol(_ name: String) -> NSImage? {

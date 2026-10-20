@@ -160,7 +160,6 @@ public final class AppController: NSObject, NSApplicationDelegate {
         guard case .recording(let startedAt) = state else { return }
         let elapsed = Int(Date().timeIntervalSince(startedAt))
         pill?.setElapsed(elapsed)
-        statusItem?.update(state)
     }
 
     private func stop() {

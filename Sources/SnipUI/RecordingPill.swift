@@ -132,8 +132,8 @@ final class RecordingPill: NSObject {
         panel.orderOut(nil)
     }
 
-    /// m:ss, as on the menu bar.
-    static func formatElapsed(_ seconds: Int) -> String {
+    /// m:ss.
+    private static func formatElapsed(_ seconds: Int) -> String {
         String(format: "%ld:%02ld", seconds / 60, seconds % 60)
     }
 
