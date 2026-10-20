@@ -17,7 +17,7 @@ public final class SCKRecorder: ScreenRecorder, @unchecked Sendable {
 
     public func start(target: CaptureTarget, settings: RecordingSettings, intermediateURL: URL) async throws {
         try lock.withLock {
-            guard session == nil, !starting else { throw SnipCaptureError.alreadyRecording }
+            guard self.session == nil, !starting else { throw SnipCaptureError.alreadyRecording }
             starting = true
         }
         defer { lock.withLock { starting = false } }

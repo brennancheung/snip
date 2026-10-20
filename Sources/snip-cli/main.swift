@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import SnipCapture
@@ -259,6 +260,9 @@ func record(_ arguments: [String]) async {
 // The commands run in a Task while the main run loop spins, so ScreenCaptureKit and dispatch
 // callbacks that expect a live main thread get one.
 let arguments = Array(CommandLine.arguments.dropFirst())
+// Opens the window server connection that window capture needs; without it a desktop-independent
+// window filter crashes in CGS_REQUIRE_INIT.
+_ = NSApplication.shared
 Task {
     switch arguments.first {
     case "windows": await listWindows()
