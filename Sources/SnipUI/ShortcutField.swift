@@ -5,6 +5,7 @@ import SwiftUI
 /// Click, then press the new key combination. Escape or clicking elsewhere keeps the old one.
 struct ShortcutField: NSViewRepresentable {
     var hotKey: HotKeySpec
+    var fontSize: CGFloat = NSFont.systemFontSize
     /// True while waiting for keys, so the app can pause its own hotkey.
     var onRecordingChange: (Bool) -> Void
     var onChange: (HotKeySpec) -> Void
@@ -14,6 +15,7 @@ struct ShortcutField: NSViewRepresentable {
         button.onRecordingChange = onRecordingChange
         button.onChange = onChange
         button.hotKey = hotKey
+        update(button, context: context)
         return button
     }
 
@@ -21,6 +23,20 @@ struct ShortcutField: NSViewRepresentable {
         button.onRecordingChange = onRecordingChange
         button.onChange = onChange
         button.hotKey = hotKey
+        update(button, context: context)
+    }
+
+    /// An NSView doesn't pick up SwiftUI's control size or font, so pass them on.
+    private func update(_ button: ShortcutButton, context: Context) {
+        button.controlSize = switch context.environment.controlSize {
+        case .mini: .mini
+        case .small: .small
+        case .large: .large
+        case .extraLarge: .extraLarge
+        default: .regular
+        }
+        button.font = .systemFont(ofSize: fontSize)
+        button.invalidateIntrinsicContentSize()
     }
 }
 

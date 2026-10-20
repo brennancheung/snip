@@ -1,7 +1,7 @@
 # Agents working on Snip
 
 Snip is a native macOS menu bar app (Swift, AppKit, ScreenCaptureKit) for quick screen recordings:
-hotkey, pick a window or drag a box, record, and a small CRF-encoded MP4 lands in ~/Downloads.
+hotkey, pick a window or drag a box, record, and a small CRF-encoded MP4 lands in ~/Movies/snip.
 
 ## Containers can't build it
 

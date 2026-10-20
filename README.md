@@ -7,7 +7,7 @@ A small native macOS screen recorder for quick snippets, in place of OBS.
 3. Press **Return** (or click **Record**). A 3-second countdown, then it records.
 4. Press **⇧⌘6** again, or **Stop** on the floating pill.
 5. Snip compresses the recording with x264 at a constant rate factor (CRF 23 by default) and puts
-   `Snip 2026-10-19 at 14.03.22.mp4` in ~/Downloads, copied to the clipboard, ready to paste.
+   `Snip 2026-10-19 at 14.03.22.mp4` in ~/Movies/snip (or the folder chosen in Settings), copied to the clipboard, ready to paste.
 
 ## How it works
 
