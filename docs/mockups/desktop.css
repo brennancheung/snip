@@ -78,11 +78,13 @@ body {
 .menubar .clock { padding: 0 6px 0 10px !important; }
 .menubar .item.open { background: rgba(255, 255, 255, 0.24); }
 
-/* The Snip status item while recording: red, with the elapsed time. */
+/* The Snip status item while recording: a red stop button (the pill has the time). */
 .menubar .snip-rec {
-  background: var(--record); border-radius: 6px; height: 20px; padding: 0 7px 0 6px !important;
-  font-weight: 600; text-shadow: none; gap: 5px;
+  width: 22px; height: 18px; border-radius: 5px; background: var(--record);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2);
 }
+.menubar .snip-rec i { width: 8px; height: 8px; border-radius: 1.5px; background: #fff; display: block; }
 
 /* ---------- Windows ---------- */
 

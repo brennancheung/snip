@@ -3,8 +3,10 @@
 //   node docs/mockups/render.cjs            (needs the playwright package and its Chromium)
 //
 // A page sets its own viewport with <meta name="mockup-size" content="W×H">; the default is the
-// 1440 × 900 desktop. FONT_DIR, if set, points at Inter, JetBrains Mono and Noto Sans Symbols 2,
-// stand-ins for SF Pro and SF Mono on machines that don't have them (Linux containers).
+// 1440 × 900 desktop. <meta name="mockup-closeup" content="x,y,w,h"> also writes NN-name-closeup.png,
+// that rectangle (in points) cropped from the same frame, for viewers that draw images small.
+// FONT_DIR, if set, points at Inter, JetBrains Mono and Noto Sans Symbols 2, stand-ins for
+// SF Pro and SF Mono on machines that don't have them (Linux containers).
 
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -46,6 +48,13 @@ function fontFaces(fontDir) {
     const out = path.join(dir, file.replace(/\.html$/, '.png'));
     await page.screenshot({ path: out });
     console.log(path.relative(process.cwd(), out));
+    const c = html.match(/<meta name="mockup-closeup" content="(\d+),(\d+),(\d+),(\d+)">/);
+    if (c) {
+      const [x, y, w, h] = c.slice(1).map(Number);
+      const closeup = out.replace(/\.png$/, '-closeup.png');
+      await page.screenshot({ path: closeup, clip: { x, y, width: w, height: h } });
+      console.log(path.relative(process.cwd(), closeup));
+    }
     await page.close();
   }
   await browser.close();

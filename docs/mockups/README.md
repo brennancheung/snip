@@ -4,14 +4,17 @@ How Snip should look at each step of a recording, drawn as HTML on a macOS 26 de
 rendered to PNG at 1440 × 900 points, 2x. The flow they follow is the plan's
 (https://volgenic.com/pages/4b992081-efa6-4f6f-82e1-44e68dfafd88).
 
-1. `01-menu.png`: the menu bar menu, with New Recording, Record Last Area, recent recordings, Settings and Quit.
+1. `01-menu.png`: the menu bar menu, with New Recording, Record Last Area, recent recordings ("Today 13.48 · 3.1 MB"), Settings and Quit.
 2. `02-window-hover.png`: selecting; the screen dims and the window under the crosshair lights up with its name and pixel size.
 3. `03-drag-box.png`: selecting; a drawn area with eight handles and the bar under it: size, Cancel, Record.
 4. `04-countdown.png`: the countdown in the middle of the area, the rest still dimmed.
-5. `05-recording.png`: recording; a red border outside the area, the pill under it, the menu bar item red with the time.
+5. `05-recording.png`: recording; a red border outside the area, the pill under it with the time, the menu bar item a red stop button.
 6. `06-compressing.png`: the pill compressing, with progress.
 7. `07-saved.png`: the notification: saved to Downloads, file name and size, Show in Finder.
 8. `08-settings.png`: the Settings window.
+
+Steps 1 to 7 also have a `-closeup.png`: a 4:3 crop around the menu, or the window with its bar or pill, for
+viewers that draw images small.
 
 Sizes are the video's pixels at the default Full Retina setting (a 640 × 360 point area records 1280 × 720).
 

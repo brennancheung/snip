@@ -1,7 +1,6 @@
 // Draws the shared desktop (wallpaper, menu bar, three windows, Dock) into <div id="desktop">.
 // Each step page adds its own Snip overlay on top. Options come from <body data-*>:
 //   data-snip="idle | open | recording"  how the Snip menu bar item looks
-//   data-elapsed="0:12"                   time shown in the menu bar while recording
 
 // Geometry the step pages share, in points on the 1440 × 900 screen.
 window.GEO = {
@@ -197,9 +196,9 @@ function safari() {
   </div>`;
 }
 
-function menubar(snip, elapsed) {
+function menubar(snip) {
   const snipItem = snip === 'recording'
-    ? `<div class="item snip-rec" id="snip-item">${ICON.snip('#fff').replace('width="17" height="17"', 'width="14" height="14"')}<span class="num">${elapsed}</span></div>`
+    ? '<div class="item" id="snip-item"><span class="snip-rec"><i></i></span></div>'
     : `<div class="item ${snip === 'open' ? 'open' : ''}" id="snip-item">${ICON.snip()}</div>`;
   return `
   <div class="menubar">
@@ -229,5 +228,5 @@ window.SNIP_ICON = ICON.snip;
 (function draw() {
   const d = document.body.dataset;
   document.getElementById('desktop').innerHTML =
-    '<div class="wallpaper"></div>' + editor() + terminal() + safari() + dock() + menubar(d.snip || 'idle', d.elapsed || '0:00');
+    '<div class="wallpaper"></div>' + editor() + terminal() + safari() + dock() + menubar(d.snip || 'idle');
 })();

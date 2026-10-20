@@ -1,15 +1,14 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>1 · Menu bar menu</title>
+<meta name="mockup-closeup" content="880,0,560,420">
 <link rel="stylesheet" href="desktop.css">
 <style>
   .menu {
-    position: absolute; top: 31px; width: 312px; padding: 5px; border-radius: 12px; z-index: 60;
+    position: absolute; top: 31px; width: 260px; padding: 5px; border-radius: 12px; z-index: 60;
     font-size: 13px;
   }
   .menu .row { height: 24px; padding: 0 10px; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; }
   .menu .row.hi { background: var(--accent); color: #fff; }
-  .menu .row .r { color: var(--secondary); font-variant-numeric: tabular-nums; }
-  .menu .row.hi .r { color: rgba(255, 255, 255, 0.8); }
   .menu .row .k { color: var(--secondary); letter-spacing: 0.06em; }
   .menu .row.hi .k { color: rgba(255, 255, 255, 0.85); }
   .menu hr { border: 0; height: 1px; background: rgba(0, 0, 0, 0.1); margin: 5px 10px; }
@@ -21,9 +20,9 @@
   <div class="row hi"><span>New Recording</span><span class="k">⇧⌘6</span></div>
   <div class="row"><span>Record Last Area</span></div>
   <hr>
-  <div class="row"><span>Snip 2026-10-19 at 13.48.05</span><span class="r">3.1 MB</span></div>
-  <div class="row"><span>Snip 2026-10-19 at 11.12.40</span><span class="r">780 KB</span></div>
-  <div class="row"><span>Snip 2026-10-18 at 16.30.19</span><span class="r">6.4 MB</span></div>
+  <div class="row"><span class="num">Today 13.48 · 3.1 MB</span></div>
+  <div class="row"><span class="num">Today 11.12 · 780 KB</span></div>
+  <div class="row"><span class="num">Yesterday 16.30 · 6.4 MB</span></div>
   <hr>
   <div class="row"><span>Settings…</span><span class="k">⌘,</span></div>
   <div class="row"><span>Quit Snip</span><span class="k">⌘Q</span></div>
