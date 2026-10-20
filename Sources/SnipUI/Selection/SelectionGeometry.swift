@@ -40,6 +40,25 @@ enum SelectionGeometry {
         return CGRect(x: x, y: y, width: rect.width, height: rect.height)
     }
 
+    /// One step of a resize drag with Space held, which moves the box instead (like ⇧⌘4 and Photoshop's
+    /// marquee). `box` is the box the drag shows, `pulled` the point the drag pulls (the pointer plus the
+    /// drag's offset: a drawn box's free corner, or a handle) and the pointer went from `last` to `pointer`.
+    /// Returns how far the box moves, the pointer's motion cut short at the edges of `bounds`, and the drag's
+    /// new offset from `pointer` to the moved pulled point, so that resizing resumes from the moved box
+    /// without a jump once Space is released.
+    static func spaceMove(
+        box: CGRect,
+        pulled: CGPoint,
+        from last: CGPoint,
+        to pointer: CGPoint,
+        within bounds: CGRect
+    ) -> (shift: CGSize, offset: CGSize) {
+        let m = moved(box, dx: pointer.x - last.x, dy: pointer.y - last.y, within: bounds)
+        let shift = CGSize(width: m.minX - box.minX, height: m.minY - box.minY)
+        let q = clamp(pulled, to: bounds)
+        return (shift, CGSize(width: q.x + shift.width - pointer.x, height: q.y + shift.height - pointer.y))
+    }
+
     /// Edges rounded to whole points, so the pixel size is a whole number on every display.
     static func snapped(_ rect: CGRect) -> CGRect {
         let x0 = rect.minX.rounded(), y0 = rect.minY.rounded()
