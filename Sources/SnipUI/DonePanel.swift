@@ -33,7 +33,7 @@ final class DonePanel: NSObject {
                               backing: .buffered, defer: false)
     private var videoSize: CGSize?
     /// The interface scale the content was built at.
-    private var builtScale: CGFloat = 0
+    private var builtScale: UIScale?
     private var closed = false
 
     /// `note`: why the file wasn't compressed, when the encode fell back to the .mov.
@@ -80,10 +80,10 @@ final class DonePanel: NSObject {
     /// whole panel wouldn't fit on `screen`.
     private func build(on screen: NSScreen?) {
         guard let videoSize else { return }
-        builtScale = UIScale.metric(100) / 100
+        builtScale = UIScale.current
         var view = DonePanelView(file: file, videoSize: videoSize, note: note, player: player)
         if let visible = screen?.visibleFrame {
-            let margin = UIScale.metric(8)
+            let margin = UIScale.current.metric(8)
             let overflow = CGSize(width: view.fittingSize.width - (visible.width - 2 * margin),
                                   height: view.fittingSize.height - (visible.height - 2 * margin))
             if overflow.width > 0 || overflow.height > 0 {
@@ -99,7 +99,7 @@ final class DonePanel: NSObject {
 
     /// A new interface size rebuilds the content, keeping the panel's top edge and centre.
     @objc private func settingsChanged() {
-        guard !closed, UIScale.metric(100) / 100 != builtScale else { return }
+        guard !closed, UIScale.current != builtScale else { return }
         let top = panel.frame.maxY
         let centre = panel.frame.midX
         let screen = panel.screen ?? NSScreen.main
@@ -113,12 +113,12 @@ final class DonePanel: NSObject {
         let visible = screen.visibleFrame
         let size = panel.frame.size
         guard let area else {
-            move(to: CGPoint(x: visible.midX - size.width / 2, y: visible.minY + UIScale.metric(24)), on: screen)
+            move(to: CGPoint(x: visible.midX - size.width / 2, y: visible.minY + UIScale.current.metric(24)), on: screen)
             return
         }
-        let below = area.minY - UIScale.metric(10) - size.height
-        let above = area.maxY + UIScale.metric(10)
-        let inside = max(area.minY, visible.minY) + UIScale.metric(24)
+        let below = area.minY - UIScale.current.metric(10) - size.height
+        let above = area.maxY + UIScale.current.metric(10)
+        let inside = max(area.minY, visible.minY) + UIScale.current.metric(24)
         let y: CGFloat
         if case .display? = target {
             y = inside
@@ -139,7 +139,7 @@ final class DonePanel: NSObject {
             return
         }
         let size = panel.frame.size
-        let margin = UIScale.metric(8)
+        let margin = UIScale.current.metric(8)
         let x = min(max(origin.x, visible.minX + margin), visible.maxX - size.width - margin)
         let y = min(max(origin.y, visible.minY + margin), visible.maxY - size.height - margin)
         panel.setFrameOrigin(CGPoint(x: x, y: y))
@@ -183,22 +183,22 @@ final class DonePanelView: NSVisualEffectView {
         state = .active
         appearance = NSAppearance(named: .vibrantDark)
         wantsLayer = true
-        layer?.cornerRadius = UIScale.metric(12)
+        layer?.cornerRadius = UIScale.current.metric(12)
         layer?.masksToBounds = true
 
         preview.onClose = { [weak self] in self?.onClose?() }
 
         let name = NSTextField(labelWithString: file.lastPathComponent)
-        name.font = UIScale.font(13, weight: .medium)
+        name.font = UIScale.current.font(13, weight: .medium)
         name.lineBreakMode = .byTruncatingMiddle
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let bytes = NSTextField(labelWithString: Self.formattedSize(of: file))
-        bytes.font = UIScale.font(11)
+        bytes.font = UIScale.current.font(11)
         bytes.textColor = .secondaryLabelColor
         bytes.setContentCompressionResistancePriority(.required, for: .horizontal)
         let info = NSStackView(views: [name, bytes])
         info.alignment = .firstBaseline
-        info.spacing = UIScale.metric(8)
+        info.spacing = UIScale.current.metric(8)
 
         let copy = actionButton("Copy", symbol: "doc.on.doc", action: #selector(copyFile))
         copyButton = copy
@@ -209,24 +209,24 @@ final class DonePanelView: NSVisualEffectView {
             actionButton("Move to Trash", symbol: "trash", action: #selector(moveToTrash)),
         ])
         buttons.distribution = .fillEqually
-        buttons.spacing = UIScale.metric(6)
+        buttons.spacing = UIScale.current.metric(6)
 
         var rows: [NSView] = [preview, info]
         if let note {
             let label = NSTextField(wrappingLabelWithString: note)
-            label.font = UIScale.font(11)
+            label.font = UIScale.current.font(11)
             label.textColor = .systemOrange
             label.preferredMaxLayoutWidth = size.width
             rows.append(label)
         }
         rows.append(buttons)
 
-        let padding = UIScale.metric(10)
+        let padding = UIScale.current.metric(10)
         let column = NSStackView(views: rows)
         column.orientation = .vertical
         column.alignment = .leading
-        column.spacing = UIScale.metric(8)
-        column.setCustomSpacing(UIScale.metric(10), after: rows[rows.count - 2])
+        column.spacing = UIScale.current.metric(8)
+        column.setCustomSpacing(UIScale.current.metric(10), after: rows[rows.count - 2])
         column.edgeInsets = NSEdgeInsets(top: padding, left: padding, bottom: padding, right: padding)
         column.translatesAutoresizingMaskIntoConstraints = false
         addSubview(column)
@@ -261,9 +261,9 @@ final class DonePanelView: NSVisualEffectView {
     /// controls fit (letterboxed). Scaled by the interface size, and no bigger than `limit`.
     private static func playerSize(for video: CGSize, limit: CGSize?) -> CGSize {
         let limit = limit ?? CGSize(width: CGFloat.infinity, height: .infinity)
-        let box = CGSize(width: min(UIScale.metric(480), limit.width), height: min(UIScale.metric(360), limit.height))
+        let box = CGSize(width: min(UIScale.current.metric(480), limit.width), height: min(UIScale.current.metric(360), limit.height))
         let fit = min(box.width / video.width, box.height / video.height)
-        let minimum = CGSize(width: min(UIScale.metric(360), limit.width), height: min(UIScale.metric(120), limit.height))
+        let minimum = CGSize(width: min(UIScale.current.metric(360), limit.width), height: min(UIScale.current.metric(120), limit.height))
         return CGSize(width: max((video.width * fit).rounded(), minimum.width),
                       height: max((video.height * fit).rounded(), minimum.height))
     }
@@ -293,18 +293,18 @@ final class DonePanelView: NSVisualEffectView {
         button.imagePosition = .imageAbove
         button.imageHugsTitle = true
         button.isBordered = false
-        button.font = UIScale.font(11)
+        button.font = UIScale.current.font(11)
         button.contentTintColor = .labelColor
         button.wantsLayer = true
         button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
-        button.layer?.cornerRadius = UIScale.metric(8)
-        button.heightAnchor.constraint(equalToConstant: UIScale.metric(46)).isActive = true
+        button.layer?.cornerRadius = UIScale.current.metric(8)
+        button.heightAnchor.constraint(equalToConstant: UIScale.current.metric(46)).isActive = true
         return button
     }
 
     private static func symbol(_ name: String, _ description: String) -> NSImage {
         let image = NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
-        return image.withSymbolConfiguration(.init(pointSize: UIScale.metric(15), weight: .regular)) ?? image
+        return image.withSymbolConfiguration(.init(pointSize: UIScale.current.metric(15), weight: .regular)) ?? image
     }
 
     /// Puts the file on the pasteboard, and says "Copied" on the button for a moment.
@@ -361,7 +361,7 @@ private final class PreviewView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
-        layer?.cornerRadius = UIScale.metric(6)
+        layer?.cornerRadius = UIScale.current.metric(6)
         layer?.masksToBounds = true
 
         let playerView = AVPlayerView()
@@ -375,7 +375,7 @@ private final class PreviewView: NSView {
         let dragArea = FileDragArea(file: file, player: player)
 
         let image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close") ?? NSImage()
-        let configuration = NSImage.SymbolConfiguration(pointSize: UIScale.metric(16), weight: .regular)
+        let configuration = NSImage.SymbolConfiguration(pointSize: UIScale.current.metric(16), weight: .regular)
             .applying(.init(paletteColors: [.white, NSColor.black.withAlphaComponent(0.55)]))
         let close = NSButton(image: image.withSymbolConfiguration(configuration) ?? image,
                              target: self, action: #selector(closeClicked))
@@ -387,7 +387,7 @@ private final class PreviewView: NSView {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
-        let inset = UIScale.metric(6)
+        let inset = UIScale.current.metric(6)
         NSLayoutConstraint.activate([
             playerView.leadingAnchor.constraint(equalTo: leadingAnchor),
             playerView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -444,7 +444,7 @@ private final class FileDragArea: NSView, NSDraggingSource {
         mouseDownEvent = nil
 
         let image = thumbnail ?? NSWorkspace.shared.icon(forFile: file.path)
-        let box = UIScale.metric(160)
+        let box = UIScale.current.metric(160)
         let fit = min(box / max(image.size.width, 1), box / max(image.size.height, 1))
         let size = CGSize(width: image.size.width * fit, height: image.size.height * fit)
         let point = convert(now, from: nil)
