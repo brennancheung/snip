@@ -9,9 +9,9 @@ final class SettingsWindowController {
     private let model: SettingsModel
     private var window: NSWindow?
 
-    /// `applyHotKey` registers the new shortcut and returns false if it can't be used.
+    /// `applyHotKey` registers the new shortcut and returns why if it can't be used.
     /// `pauseHotKey` is called with true while the shortcut field waits for keys.
-    init(applyHotKey: @escaping (HotKeySpec) -> Bool, pauseHotKey: @escaping (Bool) -> Void) {
+    init(applyHotKey: @escaping (HotKeySpec) -> String?, pauseHotKey: @escaping (Bool) -> Void) {
         model = SettingsModel(applyHotKey: applyHotKey, pauseHotKey: pauseHotKey)
     }
 
@@ -40,10 +40,10 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var hotKey: HotKeySpec
     @Published var launchAtLogin: Bool
 
-    private let applyHotKey: (HotKeySpec) -> Bool
+    private let applyHotKey: (HotKeySpec) -> String?
     let pauseHotKey: (Bool) -> Void
 
-    init(applyHotKey: @escaping (HotKeySpec) -> Bool, pauseHotKey: @escaping (Bool) -> Void) {
+    init(applyHotKey: @escaping (HotKeySpec) -> String?, pauseHotKey: @escaping (Bool) -> Void) {
         self.applyHotKey = applyHotKey
         self.pauseHotKey = pauseHotKey
         settings = SettingsStore.shared.settings
@@ -58,8 +58,11 @@ final class SettingsModel: ObservableObject {
     }
 
     func setHotKey(_ spec: HotKeySpec) {
-        guard applyHotKey(spec) else {
-            NSSound.beep()
+        if let problem = applyHotKey(spec) {
+            let alert = NSAlert()
+            alert.messageText = "Snip can’t use \(KeyCombo.display(keyCode: spec.keyCode, carbonModifiers: spec.carbonModifiers))"
+            alert.informativeText = problem
+            alert.runModal()
             return
         }
         hotKey = spec

@@ -36,26 +36,27 @@ public final class AppController: NSObject, NSApplicationDelegate {
         self.statusItem = statusItem
 
         self.notification.setUp()
-        _ = applyHotKey(SettingsStore.shared.hotKey)
+        applyHotKey(SettingsStore.shared.hotKey)
         askForScreenRecordingOnce()
     }
 
     // MARK: Hotkey
 
-    /// Registers `spec` as the global shortcut. Keeps the old one and returns false if it can't.
-    private func applyHotKey(_ spec: HotKeySpec) -> Bool {
+    /// Registers `spec` as the global shortcut. If it can't, keeps the old one and returns why.
+    @discardableResult
+    private func applyHotKey(_ spec: HotKeySpec) -> String? {
         hotKey?.unregister()
         do {
             hotKey = try HotKey(keyCode: spec.keyCode, carbonModifiers: spec.carbonModifiers) { [weak self] in
                 self?.hotKeyPressed()
             }
-            return true
+            return nil
         } catch {
             let current = SettingsStore.shared.hotKey
             hotKey = try? HotKey(keyCode: current.keyCode, carbonModifiers: current.carbonModifiers) { [weak self] in
                 self?.hotKeyPressed()
             }
-            return false
+            return (error as? HotKey.RegistrationError)?.description ?? error.localizedDescription
         }
     }
 
@@ -65,7 +66,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
             hotKey?.unregister()
             hotKey = nil
         } else if hotKey == nil {
-            _ = applyHotKey(SettingsStore.shared.hotKey)
+            applyHotKey(SettingsStore.shared.hotKey)
         }
     }
 
@@ -263,7 +264,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
     private func showSettings() {
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(
-                applyHotKey: { [weak self] spec in self?.applyHotKey(spec) ?? false },
+                applyHotKey: { [weak self] spec in self?.applyHotKey(spec) },
                 pauseHotKey: { [weak self] paused in self?.pauseHotKey(paused) }
             )
         }
