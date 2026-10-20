@@ -11,7 +11,6 @@ public final class AppController: NSObject, NSApplicationDelegate {
 
     private var statusItem: StatusItemController?
     private var settingsWindow: SettingsWindowController?
-    private let notification = SavedNotification()
     private var hotKey: HotKey?
 
     /// The last area recorded, for Record Last Area.
@@ -23,6 +22,8 @@ public final class AppController: NSObject, NSApplicationDelegate {
     private var border: RecordingBorder?
     private var pill: RecordingPill?
     private var ticker: Timer?
+    /// The finished recording's panel, until it is closed or the next recording starts.
+    private var donePanel: DonePanel?
     /// Whether the current recording has the microphone on; it follows the setting.
     private var microphoneOn = false
 
@@ -37,7 +38,6 @@ public final class AppController: NSObject, NSApplicationDelegate {
         statusItem.hasLastArea = { [weak self] in self?.lastTarget != nil }
         self.statusItem = statusItem
 
-        self.notification.setUp()
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: SettingsStore.didChange, object: nil)
         applyHotKey(SettingsStore.shared.hotKey)
         // Older builds asked only once and remembered it here.
@@ -89,6 +89,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
     private func newRecording() {
         guard state == .idle else { return }
         guard hasScreenRecordingPermission() else { return }
+        donePanel?.close()
         state = .selecting
         Task {
             let overlay = SelectionOverlay()
@@ -103,6 +104,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
     private func recordLastArea() {
         guard state == .idle, let target = lastTarget else { return }
         guard hasScreenRecordingPermission() else { return }
+        donePanel?.close()
         Task { await record(target) }
     }
 
@@ -270,8 +272,18 @@ public final class AppController: NSObject, NSApplicationDelegate {
             pasteboard.writeObjects([output as NSURL])
         }
         RecentRecordings().add(url: output)
-        notification.post(file: output, note: note)
+        showDonePanel(output, note: note)
         state = .idle
+    }
+
+    /// Beside the recorded area, where the pill was.
+    private func showDonePanel(_ output: URL, note: String?) {
+        let panel = DonePanel(file: output, note: note)
+        panel.onClose = { [weak self, weak panel] in
+            if self?.donePanel === panel { self?.donePanel = nil }
+        }
+        donePanel = panel
+        panel.show(near: lastTarget.flatMap(ScreenGeometry.appKitRect(for:)), target: lastTarget)
     }
 
     private func fail(_ message: String) {

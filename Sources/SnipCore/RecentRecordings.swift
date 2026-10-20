@@ -35,6 +35,11 @@ public struct RecentRecordings {
         save(Array(entries.prefix(Self.limit)))
     }
 
+    /// Forgets a file, for one moved to the Trash.
+    public func remove(url: URL) {
+        save(stored().filter { $0.url != url })
+    }
+
     /// The entries whose files still exist, newest first.
     public func list() -> [Entry] {
         let entries = stored()
