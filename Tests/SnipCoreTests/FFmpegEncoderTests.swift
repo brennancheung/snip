@@ -10,21 +10,24 @@ import Testing
         "-hide_banner", "-y", "-i", "/tmp/in.mov",
         "-c:v", "libx264", "-crf", "23", "-preset", "medium", "-pix_fmt", "yuv420p",
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        "-fps_mode", "cfr", "-r", "30",
         "-movflags", "+faststart", "-an", "-progress", "pipe:1", "-nostats",
         "/Users/me/Downloads/Snip 2026-10-19 at 14.03.22.mp4",
     ])
 }
 
-@Test(arguments: [(18, "slow"), (32, "veryfast")])
-func argumentsCarryCRFAndPreset(crf: Int, preset: String) {
+@Test(arguments: [(18, "slow", 60), (32, "veryfast", 30)])
+func argumentsCarryCRFPresetAndFPS(crf: Int, preset: String, fps: Int) {
     var settings = RecordingSettings()
     settings.crf = crf
     settings.preset = preset
+    settings.fps = fps
     let args = FFmpegEncoder.arguments(
         intermediate: URL(fileURLWithPath: "/tmp/in.mov"), output: URL(fileURLWithPath: "/tmp/out.mp4"), settings: settings
     )
     #expect(args[args.firstIndex(of: "-crf")! + 1] == String(crf))
     #expect(args[args.firstIndex(of: "-preset")! + 1] == preset)
+    #expect(args[args.firstIndex(of: "-r")! + 1] == String(fps))
     #expect(args.last == "/tmp/out.mp4")
 }
 

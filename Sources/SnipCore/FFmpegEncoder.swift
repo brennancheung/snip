@@ -52,6 +52,9 @@ public struct FFmpegEncoder: RecordingEncoder {
             "-pix_fmt", "yuv420p",
             // x264 with yuv420p needs even dimensions; a dragged region can be odd.
             "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            // ScreenCaptureKit writes variable frame timing (r_frame_rate 120/1); resample to a constant rate.
+            "-fps_mode", "cfr",
+            "-r", String(settings.fps),
             "-movflags", "+faststart",
             "-an",
             "-progress", "pipe:1",
