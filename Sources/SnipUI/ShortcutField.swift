@@ -31,8 +31,8 @@ struct ShortcutField: NSViewRepresentable {
         button.controlSize = switch context.environment.controlSize {
         case .mini: .mini
         case .small: .small
-        case .large: .large
-        case .extraLarge: .extraLarge
+        // NSControl's .extraLarge needs macOS 26; the package targets 15.
+        case .large, .extraLarge: .large
         default: .regular
         }
         button.font = .systemFont(ofSize: fontSize)
