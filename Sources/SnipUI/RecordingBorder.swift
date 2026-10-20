@@ -1,12 +1,11 @@
 import AppKit
 import SnipCore
 
-/// A thin red outline just outside the recorded area. Click-through and kept out of the capture.
-/// For a window target it follows the window's frame.
+/// A thin red outline just outside the recorded area, 2 points at 100% interface size.
+/// Click-through and kept out of the capture. For a window target it follows the window's frame.
 @MainActor
 final class RecordingBorder {
-    private static let width: CGFloat = 2
-
+    private let width: CGFloat
     private let target: CaptureTarget
     private let window: NSWindow
     private var timer: Timer?
@@ -16,6 +15,7 @@ final class RecordingBorder {
 
     init(target: CaptureTarget, area: CGRect) {
         self.target = target
+        width = UIScale.current.metric(2)
         window = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
         window.configureAsSnipOverlay(level: .screenSaver)
         window.ignoresMouseEvents = true
@@ -23,7 +23,7 @@ final class RecordingBorder {
         let ring = NSView()
         ring.wantsLayer = true
         ring.layer?.borderColor = NSColor.systemRed.cgColor
-        ring.layer?.borderWidth = Self.width
+        ring.layer?.borderWidth = width
         window.contentView = ring
         place(around: area)
     }
@@ -60,7 +60,7 @@ final class RecordingBorder {
         if case .display = target {
             window.setFrame(area, display: true)
         } else {
-            window.setFrame(area.insetBy(dx: -Self.width, dy: -Self.width), display: true)
+            window.setFrame(area.insetBy(dx: -width, dy: -width), display: true)
         }
     }
 }

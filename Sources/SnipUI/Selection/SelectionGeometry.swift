@@ -73,14 +73,16 @@ enum SelectionGeometry {
         return "\(w) × \(h)"
     }
 
-    /// The handle at `p`, if any: a corner or edge handle within `tolerance`, else anywhere along an edge.
-    static func handle(at p: CGPoint, in rect: CGRect, tolerance: CGFloat = 8) -> Handle? {
+    /// The handle at `p`, if any: a corner or edge handle within 8 points, else anywhere along an
+    /// edge within 4. `scale` is the interface size, which draws the handles larger.
+    static func handle(at p: CGPoint, in rect: CGRect, scale: CGFloat = 1) -> Handle? {
+        let tolerance = 8 * scale
         func near(_ a: CGPoint) -> Bool { abs(a.x - p.x) <= tolerance && abs(a.y - p.y) <= tolerance }
         let corners: [Handle] = [.topLeft, .topRight, .bottomRight, .bottomLeft]
         let edges: [Handle] = [.top, .right, .bottom, .left]
         if let corner = corners.first(where: { near($0.point(in: rect)) }) { return corner }
         if let edge = edges.first(where: { near($0.point(in: rect)) }) { return edge }
-        let edgeTolerance: CGFloat = 4
+        let edgeTolerance = 4 * scale
         let withinX = p.x >= rect.minX - edgeTolerance && p.x <= rect.maxX + edgeTolerance
         let withinY = p.y >= rect.minY - edgeTolerance && p.y <= rect.maxY + edgeTolerance
         if withinX && abs(p.y - rect.maxY) <= edgeTolerance { return .top }

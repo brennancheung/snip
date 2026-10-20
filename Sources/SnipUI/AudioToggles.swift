@@ -6,12 +6,16 @@ import SnipCore
 /// recorder); off is the slashed glyph, dimmed.
 @MainActor
 final class AudioToggles: NSStackView {
-    private let microphone = IconToggle(on: "mic.fill", off: "mic.slash.fill", name: "Microphone")
-    private let systemAudio = IconToggle(on: "speaker.wave.2.fill", off: "speaker.slash.fill", name: "System audio")
-    init() {
+    private let microphone: IconToggle
+    private let systemAudio: IconToggle
+
+    /// `scale`: the interface size of the bar or pill they sit in.
+    init(scale: UIScale) {
+        microphone = IconToggle(on: "mic.fill", off: "mic.slash.fill", name: "Microphone", scale: scale)
+        systemAudio = IconToggle(on: "speaker.wave.2.fill", off: "speaker.slash.fill", name: "System audio", scale: scale)
         super.init(frame: .zero)
         setViews([microphone, systemAudio], in: .leading)
-        spacing = 2
+        spacing = scale.metric(2)
 
         microphone.target = self
         microphone.action = #selector(microphoneClicked)
@@ -40,19 +44,19 @@ private final class IconToggle: NSButton {
     private let onImage: NSImage?
     private let offImage: NSImage?
 
-    init(on: String, off: String, name: String) {
+    init(on: String, off: String, name: String, scale: UIScale) {
         onImage = NSImage(systemSymbolName: on, accessibilityDescription: name)
         offImage = NSImage(systemSymbolName: off, accessibilityDescription: name)
         super.init(frame: .zero)
         isBordered = false
         imagePosition = .imageOnly
         imageScaling = .scaleNone
-        symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        symbolConfiguration = .init(pointSize: scale.metric(12), weight: .regular)
         toolTip = name
         setAccessibilityLabel(name)
         translatesAutoresizingMaskIntoConstraints = false
-        widthAnchor.constraint(equalToConstant: 22).isActive = true
-        heightAnchor.constraint(equalToConstant: 20).isActive = true
+        widthAnchor.constraint(equalToConstant: scale.metric(22)).isActive = true
+        heightAnchor.constraint(equalToConstant: scale.metric(20)).isActive = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }

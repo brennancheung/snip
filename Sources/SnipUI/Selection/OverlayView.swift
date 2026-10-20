@@ -42,16 +42,20 @@ final class OverlayView: NSView {
     private let label: Pill
     private let corner: Pill
     private let hint: Pill
-    private let bar = SelectionBar()
+    private let bar: SelectionBar
+    private let ui: UIScale
     private var hintFaded = false
 
-    init(screen: ScreenInfo, overlay: SelectionOverlay) {
+    /// `overlay` gets the mouse and keys; nil draws `apply`'s model and nothing more.
+    init(screen: ScreenInfo, overlay: SelectionOverlay?, scale: UIScale) {
         self.screen = screen
         self.overlay = overlay
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        label = Pill(font: font, scale: screen.scale)
-        corner = Pill(font: font, scale: screen.scale)
-        hint = Pill(font: .systemFont(ofSize: 13, weight: .medium), scale: screen.scale)
+        ui = scale
+        let font = scale.monospacedDigitFont(12, weight: .medium)
+        label = Pill(font: font, contentsScale: screen.scale, ui: scale)
+        corner = Pill(font: font, contentsScale: screen.scale, ui: scale)
+        hint = Pill(font: scale.font(13, weight: .medium), contentsScale: screen.scale, ui: scale)
+        bar = SelectionBar(scale: scale)
         super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
         wantsLayer = true
 
@@ -66,11 +70,12 @@ final class OverlayView: NSView {
         }
         root.addSublayer(outline)
         for layer in handleLayers {
-            layer.bounds = CGRect(x: 0, y: 0, width: 8, height: 8)
+            let side = scale.metric(8)
+            layer.bounds = CGRect(x: 0, y: 0, width: side, height: side)
             layer.backgroundColor = NSColor.white.cgColor
             layer.borderColor = NSColor.black.withAlphaComponent(0.4).cgColor
-            layer.borderWidth = 0.5
-            layer.cornerRadius = 1.5
+            layer.borderWidth = scale.metric(0.5)
+            layer.cornerRadius = scale.metric(1.5)
             layer.contentsScale = screen.scale
             root.addSublayer(layer)
         }
@@ -102,7 +107,7 @@ final class OverlayView: NSView {
         layoutDims(around: cut)
 
         if let cut {
-            let width: CGFloat = model.style == .region ? 1 : 3
+            let width = ui.metric(model.style == .region ? 1 : 3)
             let frame = cut.insetBy(dx: -width, dy: -width).intersection(bounds)
             outline.borderWidth = width
             outline.borderColor = (model.style == .region ? NSColor.white : NSColor.controlAccentColor).cgColor
@@ -123,8 +128,9 @@ final class OverlayView: NSView {
 
         if let labelModel = model.label, case let inside = local(labelModel.inside).intersection(bounds), !inside.isNull, !inside.isEmpty {
             label.set(labelModel.text)
+            let inset = ui.metric(6)
             label.layer.frame = CGRect(
-                origin: CGPoint(x: inside.minX + 6, y: inside.maxY - 6 - label.size.height),
+                origin: CGPoint(x: inside.minX + inset, y: inside.maxY - inset - label.size.height),
                 size: label.size
             )
             label.layer.isHidden = false
@@ -135,9 +141,10 @@ final class OverlayView: NSView {
         if let text = model.cornerSize, let cut {
             corner.set(text)
             let size = corner.size
-            let x = max(4, min(cut.maxX - size.width, bounds.maxX - size.width - 4))
-            var y = cut.minY - 6 - size.height
-            if y < 4 { y = cut.minY + 6 }
+            let margin = ui.metric(4), gap = ui.metric(6)
+            let x = max(margin, min(cut.maxX - size.width, bounds.maxX - size.width - margin))
+            var y = cut.minY - gap - size.height
+            if y < margin { y = cut.minY + gap }
             corner.layer.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
             corner.layer.isHidden = false
         } else {
@@ -174,7 +181,7 @@ final class OverlayView: NSView {
         }
         let visibleTop = screen.visibleFrame.maxY - screen.frame.minY
         hint.layer.frame = CGRect(
-            origin: CGPoint(x: (bounds.width - hint.size.width) / 2, y: visibleTop - 24 - hint.size.height),
+            origin: CGPoint(x: (bounds.width - hint.size.width) / 2, y: visibleTop - ui.metric(24) - hint.size.height),
             size: hint.size
         )
         hint.layer.isHidden = false
@@ -197,11 +204,12 @@ final class OverlayView: NSView {
         }
         bar.setText(barModel.text)
         let size = bar.frame.size
-        let x = max(8, min(sel.midX - size.width / 2, bounds.maxX - size.width - 8))
-        var y = sel.minY - 10 - size.height
-        if y < 8 {
-            y = sel.maxY + 10
-            if y + size.height > bounds.maxY - 8 { y = sel.minY + 16 }
+        let margin = ui.metric(8), gap = ui.metric(10)
+        let x = max(margin, min(sel.midX - size.width / 2, bounds.maxX - size.width - margin))
+        var y = sel.minY - gap - size.height
+        if y < margin {
+            y = sel.maxY + gap
+            if y + size.height > bounds.maxY - margin { y = sel.minY + ui.metric(16) }
         }
         bar.setFrameOrigin(CGPoint(x: x, y: y))
         bar.isHidden = false
@@ -254,15 +262,18 @@ private final class Pill {
     let layer = CALayer()
     private let text = CATextLayer()
     private let font: NSFont
+    private let ui: UIScale
     private var current: String?
     private(set) var size = CGSize.zero
 
-    init(font: NSFont, scale: CGFloat) {
+    /// `contentsScale` is the display's backing scale, `ui` the interface size.
+    init(font: NSFont, contentsScale: CGFloat, ui: UIScale) {
         self.font = font
+        self.ui = ui
         layer.backgroundColor = NSColor.black.withAlphaComponent(0.75).cgColor
-        layer.cornerRadius = 5
-        layer.contentsScale = scale
-        text.contentsScale = scale
+        layer.cornerRadius = ui.metric(5)
+        layer.contentsScale = contentsScale
+        text.contentsScale = contentsScale
         layer.addSublayer(text)
         layer.isHidden = true
     }
@@ -274,7 +285,8 @@ private final class Pill {
         text.string = attributed
         let measured = attributed.size()
         let w = ceil(measured.width), h = ceil(measured.height)
-        size = CGSize(width: w + 16, height: h + 6)
-        text.frame = CGRect(x: 8, y: 3, width: w, height: h)
+        let padX = ui.metric(8), padY = ui.metric(3)
+        size = CGSize(width: w + 2 * padX, height: h + 2 * padY)
+        text.frame = CGRect(x: padX, y: padY, width: w, height: h)
     }
 }
