@@ -43,6 +43,7 @@ final class SettingsModel: ObservableObject {
 
     private let applyHotKey: (HotKeySpec) -> String?
     let pauseHotKey: (Bool) -> Void
+    private var settingsObserver: NSObjectProtocol?
 
     init(applyHotKey: @escaping (HotKeySpec) -> String?, pauseHotKey: @escaping (Bool) -> Void) {
         self.applyHotKey = applyHotKey
@@ -51,7 +52,7 @@ final class SettingsModel: ObservableObject {
         hotKey = SettingsStore.shared.hotKey
         launchAtLogin = SMAppService.mainApp.status == .enabled
         // The menu's Microphone and System Audio items change settings while this window is open.
-        NotificationCenter.default.addObserver(forName: SettingsStore.didChange, object: nil, queue: .main) { [weak self] _ in
+        settingsObserver = NotificationCenter.default.addObserver(forName: SettingsStore.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.settings != SettingsStore.shared.settings else { return }
                 self.settings = SettingsStore.shared.settings

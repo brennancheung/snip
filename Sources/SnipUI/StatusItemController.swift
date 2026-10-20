@@ -68,12 +68,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         last.isEnabled = idle && hasLastArea()
         add(last)
 
-        let settings = SettingsStore.shared.settings
+        let audio = SettingsStore.shared.settings
         let microphone = NSMenuItem(title: "Microphone", action: #selector(toggleMicrophone), keyEquivalent: "")
-        microphone.state = settings.recordMicrophone ? .on : .off
+        microphone.state = audio.recordMicrophone ? .on : .off
         add(microphone)
         let systemAudio = NSMenuItem(title: "System Audio", action: #selector(toggleSystemAudio), keyEquivalent: "")
-        systemAudio.state = settings.recordSystemAudio ? .on : .off
+        systemAudio.state = audio.recordSystemAudio ? .on : .off
         add(systemAudio)
 
         let recents = RecentRecordings().list().prefix(5)
