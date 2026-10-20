@@ -1,0 +1,18 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Recording</title>
+<link rel="stylesheet" href="desktop.css">
+</head>
+<body data-snip="recording">
+<div class="stage" id="desktop"></div>
+<div class="layer"></div>
+<script src="desktop.js"></script>
+<script src="snip.js"></script>
+<script>
+compose(async () => {
+  const a = GEO.area;
+  recordingBorder(a);
+  under(await pill(), a);
+  cursor(ARROW, 940, 300);
+});
+</script>
+</body></html>

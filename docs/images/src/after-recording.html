@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>After recording</title>
+<link rel="stylesheet" href="desktop.css">
+</head>
+<body data-snip="idle">
+<div class="stage" id="desktop"></div>
+<div class="layer"></div>
+<script src="desktop.js"></script>
+<script src="snip.js"></script>
+<script>
+compose(async () => {
+  // Where the pill was: 10 pt under the recorded area.
+  under(await donePanel(recordingOf(GEO.area)), GEO.area);
+});
+</script>
+</body></html>
