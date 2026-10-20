@@ -16,8 +16,8 @@ swift test
 bin/build-app && open build/Snip.app
 ```
 
-Before you open a pull request, `swift build` and `swift test` should pass; CI runs both on
-macOS. If you changed the UI, say how you checked it, and include a screenshot.
+Before you open a pull request, make sure `swift build` and `swift test` pass. If you changed the
+UI, say how you checked it, and include a screenshot.
 
 ## Layout
 

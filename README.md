@@ -111,6 +111,7 @@ swift build                 # the app, snip-cli and snip-ui-preview
 swift test
 bin/make-signing-cert       # once: a local code-signing certificate (see Signing)
 bin/build-app               # build/Snip.app, signed
+mkdir -p ~/Applications
 cp -R build/Snip.app ~/Applications/
 open ~/Applications/Snip.app
 ```
