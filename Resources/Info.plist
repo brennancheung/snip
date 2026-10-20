@@ -22,5 +22,7 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Snip records your microphone when you turn it on.</string>
 </dict>
 </plist>

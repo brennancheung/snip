@@ -68,6 +68,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         last.isEnabled = idle && hasLastArea()
         add(last)
 
+        let settings = SettingsStore.shared.settings
+        let microphone = NSMenuItem(title: "Microphone", action: #selector(toggleMicrophone), keyEquivalent: "")
+        microphone.state = settings.recordMicrophone ? .on : .off
+        add(microphone)
+        let systemAudio = NSMenuItem(title: "System Audio", action: #selector(toggleSystemAudio), keyEquivalent: "")
+        systemAudio.state = settings.recordSystemAudio ? .on : .off
+        add(systemAudio)
+
         let recents = RecentRecordings().list().prefix(5)
         if !recents.isEmpty {
             menu.addItem(.separator())
@@ -132,6 +140,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func newRecording() { onNewRecording?() }
     @objc private func recordLastArea() { onRecordLastArea?() }
     @objc private func settings() { onSettings?() }
+
+    @objc private func toggleMicrophone() {
+        if SettingsStore.shared.settings.recordMicrophone { Microphone.turnOff() } else { Microphone.turnOn() }
+    }
+
+    @objc private func toggleSystemAudio() {
+        SettingsStore.shared.settings.recordSystemAudio.toggle()
+    }
 
     @objc private func revealRecent(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }

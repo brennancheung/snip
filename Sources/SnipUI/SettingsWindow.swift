@@ -39,6 +39,7 @@ final class SettingsModel: ObservableObject {
     }
     @Published private(set) var hotKey: HotKeySpec
     @Published var launchAtLogin: Bool
+    @Published private(set) var microphones: [Microphone.Input] = []
 
     private let applyHotKey: (HotKeySpec) -> String?
     let pauseHotKey: (Bool) -> Void
@@ -49,12 +50,32 @@ final class SettingsModel: ObservableObject {
         settings = SettingsStore.shared.settings
         hotKey = SettingsStore.shared.hotKey
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        // The menu's Microphone and System Audio items change settings while this window is open.
+        NotificationCenter.default.addObserver(forName: SettingsStore.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.settings != SettingsStore.shared.settings else { return }
+                self.settings = SettingsStore.shared.settings
+            }
+        }
     }
 
     func reload() {
         settings = SettingsStore.shared.settings
         hotKey = SettingsStore.shared.hotKey
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        microphones = Microphone.inputs()
+    }
+
+    /// The chosen input's id, or nil for Off. On with no choice shows the default input.
+    var microphone: String? {
+        get {
+            guard settings.recordMicrophone else { return nil }
+            let chosen = microphones.first { $0.id == settings.microphoneDeviceID }
+            return (chosen ?? microphones.first)?.id
+        }
+        set {
+            if let newValue { Microphone.turnOn(deviceID: newValue) } else { Microphone.turnOff() }
+        }
     }
 
     func setHotKey(_ spec: HotKeySpec) {
@@ -127,6 +148,15 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
 
             Toggle("Show cursor", isOn: $model.settings.showCursor)
+
+            Picker("Microphone", selection: $model.microphone) {
+                Text("Off").tag(String?.none)
+                ForEach(model.microphones) { input in
+                    Text(input.name).tag(String?.some(input.id))
+                }
+            }
+
+            Toggle("System audio", isOn: $model.settings.recordSystemAudio)
 
             Picker("Countdown", selection: $model.settings.countdownSeconds) {
                 Text("Off").tag(0)

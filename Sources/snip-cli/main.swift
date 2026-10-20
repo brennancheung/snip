@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import CoreGraphics
 import Foundation
 import SnipCapture
@@ -12,7 +13,8 @@ enum Help {
       snip-cli windows
       snip-cli displays
       snip-cli record (--window <id> | --rect x,y,w,h [--display <id>] | --display <id>)
-                      [--seconds 5] [--fps 30] [--crf 23] [--scale full|half] [--no-cursor] [--out <path>]
+                      [--seconds 5] [--fps 30] [--crf 23] [--scale full|half] [--no-cursor]
+                      [--mic] [--system-audio] [--out <path>]
 
       windows   lists recordable windows, front to back: id, app, title, size in points.
       displays  lists displays: id, size in points, pixel scale.
@@ -22,6 +24,8 @@ enum Help {
                 ffmpeg the uncompressed .mov is kept instead.
                 --rect is in points, top-left origin, relative to the display (the main display
                 unless --display is given).
+                --mic records the default microphone, --system-audio what the Mac plays; with
+                both they are mixed into one AAC track.
     """
 }
 
@@ -46,6 +50,13 @@ func failPermission() -> Never {
         """)
     ScreenCapturePermission.request()
     exit(2)
+}
+
+func failMicrophonePermission() -> Never {
+    fail("""
+        Microphone permission is missing for the app running snip-cli (your terminal).
+        Turn it on in System Settings › Privacy & Security › Microphone, then run snip-cli again.
+        """, code: 2)
 }
 
 func report(_ error: Error) -> Never {
@@ -152,6 +163,8 @@ func parseRecordOptions(_ arguments: [String]) -> RecordOptions {
             guard let scale = RecordingSettings.Scale(rawValue: text) else { fail("--scale is full or half") }
             options.settings.scale = scale
         case "--no-cursor": options.settings.showCursor = false
+        case "--mic": options.settings.recordMicrophone = true
+        case "--system-audio": options.settings.recordSystemAudio = true
         case "--out": options.out = value(flag)
         case "-h", "--help": print(Help.usage); exit(0)
         default: fail("unknown option \(flag)\n\n\(Help.usage)")
@@ -208,6 +221,11 @@ func record(_ arguments: [String]) async {
     let target = options.target
     let settings = options.settings
     let intermediate = OutputNaming.intermediateURL()
+
+    if settings.recordMicrophone {
+        let granted = await AVCaptureDevice.requestAccess(for: .audio)
+        if !granted { failMicrophonePermission() }
+    }
 
     let recorder = SCKRecorder()
     let stop = StopSignal()
