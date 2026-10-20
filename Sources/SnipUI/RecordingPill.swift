@@ -134,7 +134,7 @@ final class RecordingPill: NSObject {
 
     /// m:ss, as on the menu bar.
     static func formatElapsed(_ seconds: Int) -> String {
-        String(format: "%d:%02d", seconds / 60, seconds % 60)
+        String(format: "%ld:%02ld", seconds / 60, seconds % 60)
     }
 
     private func resize() {
@@ -150,15 +150,16 @@ final class RecordingPill: NSObject {
         let size = panel.frame.size
         let below = area.minY - Self.gap - size.height
         let above = area.maxY + Self.gap
+        let inside = max(area.minY, visible.minY) + 24
         let y: CGFloat
         if case .display = target {
-            y = area.minY + 24
+            y = inside
         } else if below >= visible.minY {
             y = below
         } else if above + size.height <= visible.maxY {
             y = above
         } else {
-            y = max(area.minY, visible.minY) + 24
+            y = inside
         }
         let x = min(max(area.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
         panel.setFrameOrigin(CGPoint(x: x, y: y))
