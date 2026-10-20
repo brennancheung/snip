@@ -62,6 +62,7 @@ final class RecordingSession: NSObject, @unchecked Sendable {
     /// Stops the stream and waits for the recording output to finish the file.
     func finish() async throws -> URL {
         await stopStream()
+        defer { release() }
         do {
             try await waitForOutcome(timeout: 15)
         } catch {
@@ -77,6 +78,7 @@ final class RecordingSession: NSObject, @unchecked Sendable {
     func discard() async {
         await stopStream()
         try? await waitForOutcome(timeout: 5)
+        release()
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -84,6 +86,11 @@ final class RecordingSession: NSObject, @unchecked Sendable {
         lock.withLock { stopping = true }
         // Throws when the stream already stopped on its own; the recording output still reports how it ended.
         try? await stream?.stopCapture()
+    }
+
+    /// Drops the stream and recording output, only once the file is finished: releasing the output
+    /// earlier could cut its finalization short. Removing the screen output breaks the stream → self cycle.
+    private func release() {
         if let stream {
             try? stream.removeStreamOutput(self, type: .screen)
         }

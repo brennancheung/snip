@@ -5,7 +5,6 @@ import SnipCore
 
 // snip-cli: drive capture and encode without the UI.
 
-// Not a top-level `let`: top-level globals here are main-actor isolated, and the commands aren't.
 enum Help {
     static let usage = """
     usage:
@@ -257,12 +256,17 @@ func record(_ arguments: [String]) async {
 
 // MARK: - main
 
+// The commands run in a Task while the main run loop spins, so ScreenCaptureKit and dispatch
+// callbacks that expect a live main thread get one.
 let arguments = Array(CommandLine.arguments.dropFirst())
-switch arguments.first {
-case "windows": await listWindows()
-case "displays": listDisplays()
-case "record": await record(Array(arguments.dropFirst()))
-case "-h", "--help", "help": print(Help.usage)
-default: fail(Help.usage)
+Task {
+    switch arguments.first {
+    case "windows": await listWindows()
+    case "displays": listDisplays()
+    case "record": await record(Array(arguments.dropFirst()))
+    case "-h", "--help", "help": print(Help.usage)
+    default: fail(Help.usage)
+    }
+    exit(0)
 }
-exit(0)
+RunLoop.main.run()

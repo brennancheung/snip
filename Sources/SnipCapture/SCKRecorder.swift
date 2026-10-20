@@ -49,7 +49,7 @@ public final class SCKRecorder: ScreenRecorder, @unchecked Sendable {
     }
 
     private func takeSession() -> RecordingSession? {
-        lock.withLock {
+        lock.withLock { () -> RecordingSession? in
             defer { session = nil }
             return session
         }
