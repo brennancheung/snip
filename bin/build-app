@@ -1,7 +1,8 @@
 #!/bin/sh
 # Builds Snip.app into build/ and signs it.
 # Screen Recording permission is tied to the signature: with ad-hoc signing macOS asks again
-# after every rebuild. Set SNIP_SIGN_IDENTITY to a stable code-signing identity to avoid that.
+# after every rebuild. So it signs with SNIP_SIGN_IDENTITY if set, else with "Snip Local Signing"
+# (a self-signed certificate in the login keychain) if `security find-identity` lists it, else ad hoc.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -14,5 +15,19 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_dir/Snip" "$app/Contents/MacOS/Snip"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 
-codesign --force --sign "${SNIP_SIGN_IDENTITY:--}" "$app"
+local_identity="Snip Local Signing"
+if [ -n "${SNIP_SIGN_IDENTITY:-}" ]; then
+    identity=$SNIP_SIGN_IDENTITY
+elif security find-identity -p codesigning 2>/dev/null | grep -qF "\"$local_identity\""; then
+    identity=$local_identity
+else
+    identity=-
+fi
+if [ "$identity" = "-" ]; then
+    echo "Signing ad hoc (macOS will ask for Screen Recording permission again)" >&2
+else
+    echo "Signing with \"$identity\"" >&2
+fi
+
+codesign --force --sign "$identity" "$app"
 echo "$(pwd)/$app"

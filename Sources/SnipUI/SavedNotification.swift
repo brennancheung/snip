@@ -1,7 +1,7 @@
 import AppKit
 import UserNotifications
 
-/// The "Saved to Downloads" notification with a Show in Finder action.
+/// The "Saved to snip" notification with a Show in Finder action.
 final class SavedNotification: NSObject, UNUserNotificationCenterDelegate {
     private static let category = "saved"
     private static let showInFinder = "show-in-finder"
@@ -23,7 +23,7 @@ final class SavedNotification: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    /// Title "Saved to Downloads", body "Snip 2026-10-19 at 14.03.22.mp4 · 4.2 MB", and `note` on a second line.
+    /// Title "Saved to snip", body "Snip 2026-10-19 at 14.03.22.mp4 · 4.2 MB", and `note` on a second line.
     func post(file: URL, note: String?) {
         guard let center else { return }
         let content = UNMutableNotificationContent()

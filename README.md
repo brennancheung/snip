@@ -7,7 +7,7 @@ A small native macOS screen recorder for quick snippets, in place of OBS.
 3. Press **Return** (or click **Record**). A 3-second countdown, then it records.
 4. Press **⇧⌘6** again, or **Stop** on the floating pill.
 5. Snip compresses the recording with x264 at a constant rate factor (CRF 23 by default) and puts
-   `Snip 2026-10-19 at 14.03.22.mp4` in ~/Downloads, copied to the clipboard, ready to paste.
+   `Snip 2026-10-19 at 14.03.22.mp4` in ~/Movies/snip (or the folder chosen in Settings), copied to the clipboard, ready to paste.
 
 ## How it works
 
@@ -25,6 +25,12 @@ swift build          # libraries, the app and snip-cli
 swift test
 bin/build-app        # build/Snip.app, signed
 ```
+
+`bin/build-app` signs with `SNIP_SIGN_IDENTITY` if it is set, else with the "Snip Local Signing"
+certificate if `security find-identity -p codesigning` lists it (a self-signed certificate in the
+login keychain), else ad hoc, and prints which one it used. Screen Recording permission is tied to
+the signature, so with a stable identity it survives rebuilds; ad hoc, macOS asks again after
+every rebuild.
 
 The first run asks for Screen Recording permission (System Settings › Privacy & Security), and
 turning the microphone on the first time asks for Microphone permission.

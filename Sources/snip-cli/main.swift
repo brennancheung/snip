@@ -20,7 +20,7 @@ enum Help {
       displays  lists displays: id, size in points, pixel scale.
       record    records for --seconds (0 means until Ctrl-C; Ctrl-C always stops early),
                 compresses with ffmpeg (x264 at --crf) and prints the final path. --out is a
-                file or a folder; the default is "Snip <date>.mp4" in ~/Downloads. Without
+                file or a folder; the default is "Snip <date>.mp4" in ~/Movies/snip. Without
                 ffmpeg the uncompressed .mov is kept instead.
                 --rect is in points, top-left origin, relative to the display (the main display
                 unless --display is given).
@@ -274,7 +274,11 @@ func compress(_ intermediate: URL, out: String?, settings: RecordingSettings) as
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         output = exists && isDirectory.boolValue ? OutputNaming.outputURL(in: url) : url
     } else {
-        output = OutputNaming.outputURL(in: settings.resolvedOutputDirectory)
+        do {
+            output = OutputNaming.outputURL(in: try settings.createOutputDirectory())
+        } catch {
+            fail("error: couldn't create \(settings.resolvedOutputDirectory.path): \(error.localizedDescription)\nThe intermediate is kept at \(intermediate.path)")
+        }
     }
 
     let started = Date()

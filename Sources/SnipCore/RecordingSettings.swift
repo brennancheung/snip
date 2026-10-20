@@ -19,7 +19,7 @@ public struct RecordingSettings: Sendable, Codable, Equatable {
     public var countdownSeconds: Int = 3
     /// Put the finished file on the pasteboard so it can be pasted into Slack, Mail and the like.
     public var copyToClipboard: Bool = true
-    /// Where finished recordings go. nil means ~/Downloads.
+    /// Where finished recordings go. nil means `defaultOutputDirectory`, ~/Movies/snip.
     public var outputDirectory: URL? = nil
     public var recordMicrophone: Bool = false
     /// The microphone's `AVCaptureDevice.uniqueID`. nil means the system default input.
@@ -28,8 +28,27 @@ public struct RecordingSettings: Sendable, Codable, Equatable {
 
     public init() {}
 
+    /// ~/Movies/snip.
+    public static var defaultOutputDirectory: URL {
+        FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("snip", isDirectory: true)
+    }
+
     public var resolvedOutputDirectory: URL {
-        outputDirectory ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        outputDirectory ?? Self.defaultOutputDirectory
+    }
+
+    /// Sets the output folder, storing nil when `url` is the default so it follows the default.
+    public mutating func setOutputDirectory(_ url: URL) {
+        let isDefault = url.standardizedFileURL.path == Self.defaultOutputDirectory.standardizedFileURL.path
+        outputDirectory = isDefault ? nil : url
+    }
+
+    /// The output folder, created (with any missing parents) if it doesn't exist.
+    public func createOutputDirectory() throws -> URL {
+        let directory = resolvedOutputDirectory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 }
 

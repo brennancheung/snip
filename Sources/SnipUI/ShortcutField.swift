@@ -5,6 +5,7 @@ import SwiftUI
 /// Click, then press the new key combination. Escape or clicking elsewhere keeps the old one.
 struct ShortcutField: NSViewRepresentable {
     var hotKey: HotKeySpec
+    var fontSize: CGFloat = NSFont.systemFontSize
     /// True while waiting for keys, so the app can pause its own hotkey.
     var onRecordingChange: (Bool) -> Void
     var onChange: (HotKeySpec) -> Void
@@ -14,6 +15,7 @@ struct ShortcutField: NSViewRepresentable {
         button.onRecordingChange = onRecordingChange
         button.onChange = onChange
         button.hotKey = hotKey
+        update(button, context: context)
         return button
     }
 
@@ -21,6 +23,13 @@ struct ShortcutField: NSViewRepresentable {
         button.onRecordingChange = onRecordingChange
         button.onChange = onChange
         button.hotKey = hotKey
+        update(button, context: context)
+    }
+
+    /// An NSView doesn't pick up SwiftUI's control size or font, so pass them on.
+    private func update(_ button: ShortcutButton, context: Context) {
+        button.controlSize = NSControl.ControlSize(context.environment.controlSize)
+        if button.titleFont.pointSize != fontSize { button.titleFont = .systemFont(ofSize: fontSize) }
     }
 }
 
@@ -28,6 +37,9 @@ final class ShortcutButton: NSButton {
     var onRecordingChange: ((Bool) -> Void)?
     var onChange: ((HotKeySpec) -> Void)?
     var hotKey = HotKeySpec(keyCode: 0, carbonModifiers: 0) {
+        didSet { refreshTitle() }
+    }
+    var titleFont = NSFont.systemFont(ofSize: NSFont.systemFontSize) {
         didSet { refreshTitle() }
     }
 
@@ -89,6 +101,8 @@ final class ShortcutButton: NSButton {
     }
 
     private func refreshTitle() {
-        title = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
+        let text = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
+        attributedTitle = .controlTitle(text, font: titleFont)
+        invalidateIntrinsicContentSize()
     }
 }

@@ -191,11 +191,11 @@ public final class AppController: NSObject, NSApplicationDelegate {
         Task { await recorder.cancel() }
     }
 
-    /// Encodes to the output folder. Without ffmpeg, or if it fails, keeps the uncompressed
-    /// recording instead and returns a note saying so.
+    /// Encodes to the output folder, creating it if it is missing. Without ffmpeg, or if it
+    /// fails, keeps the uncompressed recording instead and returns a note saying so.
     private func encode(_ intermediate: URL, startedAt: Date) async throws -> (URL, String?) {
         let settings = SettingsStore.shared.settings
-        let output = OutputNaming.outputURL(in: settings.resolvedOutputDirectory, date: startedAt, ext: "mp4")
+        let output = OutputNaming.outputURL(in: try settings.createOutputDirectory(), date: startedAt, ext: "mp4")
         let note: String
         do {
             try await FFmpegEncoder().encode(intermediate: intermediate, to: output, settings: settings) { [weak self] progress in
