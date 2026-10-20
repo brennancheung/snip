@@ -137,7 +137,7 @@ struct SettingsView: View {
     // Large on purpose: the default 13 pt is hard to read on a very high-resolution monitor.
     /// Row labels.
     private static let bodySize: CGFloat = 17
-    /// Text inside controls: segments, popups, buttons, the folder path, the shortcut.
+    /// Text inside controls (SettingsControls.swift): segments, popups, buttons, the folder path, the shortcut.
     private static let controlTextSize: CGFloat = 16
     /// The slider's Sharper and Smaller.
     private static let scaleSize: CGFloat = 15
@@ -161,56 +161,43 @@ struct SettingsView: View {
                     Text("Smaller").font(.system(size: Self.scaleSize))
                 }
 
-                LabeledContent("Frame rate") {
-                    Picker("Frame rate", selection: $model.settings.fps) {
-                        Text("30").tag(30)
-                        Text("60").tag(60)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .font(.system(size: Self.controlTextSize))
+                row("Frame rate") {
+                    SegmentedControl(
+                        selection: $model.settings.fps,
+                        options: [("30", 30), ("60", 60)],
+                        fontSize: Self.controlTextSize
+                    )
                 }
 
-                LabeledContent("Resolution") {
-                    Picker("Resolution", selection: $model.settings.scale) {
-                        Text("Full").tag(RecordingSettings.Scale.full)
-                        Text("Half").tag(RecordingSettings.Scale.half)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .font(.system(size: Self.controlTextSize))
+                row("Resolution") {
+                    SegmentedControl(
+                        selection: $model.settings.scale,
+                        options: [("Full", RecordingSettings.Scale.full), ("Half", RecordingSettings.Scale.half)],
+                        fontSize: Self.controlTextSize
+                    )
                 }
 
                 Toggle("Show cursor", isOn: $model.settings.showCursor)
 
-                LabeledContent("Microphone") {
-                    Picker("Microphone", selection: $model.microphone) {
-                        Text("Off").tag(String?.none)
-                        ForEach(model.microphones) { input in
-                            Text(input.name).tag(String?.some(input.id))
-                        }
-                    }
-                    .labelsHidden()
-                    .font(.system(size: Self.controlTextSize))
+                row("Microphone") {
+                    PopUpControl(
+                        selection: $model.microphone,
+                        options: microphoneOptions,
+                        fontSize: Self.controlTextSize
+                    )
                 }
 
                 Toggle("System audio", isOn: $model.settings.recordSystemAudio)
 
-                LabeledContent("Countdown") {
-                    Picker("Countdown", selection: $model.settings.countdownSeconds) {
-                        Text("Off").tag(0)
-                        Text("3 s").tag(3)
-                        Text("5 s").tag(5)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .font(.system(size: Self.controlTextSize))
+                row("Countdown") {
+                    SegmentedControl(
+                        selection: $model.settings.countdownSeconds,
+                        options: [("Off", 0), ("3 s", 3), ("5 s", 5)],
+                        fontSize: Self.controlTextSize
+                    )
                 }
 
-                LabeledContent("Save to") {
+                row("Save to") {
                     HStack(spacing: 8) {
                         Text(model.folderPath)
                             .font(.system(size: Self.controlTextSize))
@@ -218,19 +205,15 @@ struct SettingsView: View {
                             .truncationMode(.middle)
                             .textSelection(.enabled)
                             .help(model.settings.resolvedOutputDirectory.path)
-                        Button("Change…") { model.chooseFolder() }
-                            .font(.system(size: Self.controlTextSize))
-                            .fixedSize()
-                        Button("Show") { model.showFolder() }
-                            .font(.system(size: Self.controlTextSize))
-                            .fixedSize()
+                        PushButton(title: "Change…", fontSize: Self.controlTextSize) { model.chooseFolder() }
+                        PushButton(title: "Show", fontSize: Self.controlTextSize) { model.showFolder() }
                             .help("Show the folder in Finder")
                     }
                 }
 
                 Toggle("Copy to clipboard when done", isOn: $model.settings.copyToClipboard)
 
-                LabeledContent("Shortcut") {
+                row("Shortcut") {
                     ShortcutField(
                         hotKey: model.hotKey,
                         fontSize: Self.controlTextSize,
@@ -254,6 +237,17 @@ struct SettingsView: View {
         .contentMargins(.vertical, 24, for: .scrollContent)
         .frame(width: 620)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// A labelled row with the label vertically centred on its control.
+    private func row<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        LabeledContent(title, content: content)
+            .labeledContentStyle(CentredRowStyle())
+    }
+
+    /// Off, then each input by its id.
+    private var microphoneOptions: [(label: String, value: String?)] {
+        [(label: "Off", value: nil)] + model.microphones.map { (label: $0.name, value: Optional($0.id)) }
     }
 
     private var crf: Binding<Double> {

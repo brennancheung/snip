@@ -28,13 +28,7 @@ struct ShortcutField: NSViewRepresentable {
 
     /// An NSView doesn't pick up SwiftUI's control size or font, so pass them on.
     private func update(_ button: ShortcutButton, context: Context) {
-        button.controlSize = switch context.environment.controlSize {
-        case .mini: .mini
-        case .small: .small
-        // NSControl's .extraLarge needs macOS 26; the package targets 15.
-        case .large, .extraLarge: .large
-        default: .regular
-        }
+        button.controlSize = NSControl.ControlSize(context.environment.controlSize)
         if button.titleFont.pointSize != fontSize { button.titleFont = .systemFont(ofSize: fontSize) }
     }
 }
@@ -106,16 +100,9 @@ final class ShortcutButton: NSButton {
         onChange?(HotKeySpec(keyCode: keyCode, carbonModifiers: modifiers))
     }
 
-    /// An attributed title, so the font holds whatever the control size is.
     private func refreshTitle() {
         let text = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
-        let centred = NSMutableParagraphStyle()
-        centred.alignment = .center
-        attributedTitle = NSAttributedString(string: text, attributes: [
-            .font: titleFont,
-            .foregroundColor: NSColor.controlTextColor,
-            .paragraphStyle: centred,
-        ])
+        attributedTitle = .controlTitle(text, font: titleFont)
         invalidateIntrinsicContentSize()
     }
 }
