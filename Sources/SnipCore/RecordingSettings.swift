@@ -25,8 +25,30 @@ public struct RecordingSettings: Sendable, Codable, Equatable {
     /// The microphone's `AVCaptureDevice.uniqueID`. nil means the system default input.
     public var microphoneDeviceID: String? = nil
     public var recordSystemAudio: Bool = true
+    /// How large Snip draws its own UI, 1 = the macOS default sizes. nil means automatic,
+    /// see `automaticInterfaceScale`.
+    public var interfaceScale: Double? = nil
 
     public init() {}
+
+    /// The sizes Settings offers for `interfaceScale`.
+    public static let interfaceScaleChoices: [Double] = [1, 1.25, 1.5, 1.75, 2, 2.5]
+    public static let interfaceScaleRange: ClosedRange<Double> = 1...2.5
+
+    /// The automatic interface size for the main display: 200% on a 1x display wider than
+    /// 5000 points (an 8K-wide monitor at 1x, where the default sizes are physically tiny), else 100%.
+    public static func automaticInterfaceScale(displayWidth: Double, backingScale: Double) -> Double {
+        backingScale <= 1 && displayWidth > 5000 ? 2 : 1
+    }
+
+    /// `interfaceScale` kept in range, or the automatic size for a main display this wide
+    /// (in points) at this backing scale.
+    public func effectiveInterfaceScale(displayWidth: Double, backingScale: Double) -> Double {
+        guard let interfaceScale, interfaceScale.isFinite else {
+            return Self.automaticInterfaceScale(displayWidth: displayWidth, backingScale: backingScale)
+        }
+        return min(max(interfaceScale, Self.interfaceScaleRange.lowerBound), Self.interfaceScaleRange.upperBound)
+    }
 
     /// ~/Movies/snip.
     public static var defaultOutputDirectory: URL {
@@ -72,5 +94,6 @@ extension RecordingSettings {
         recordMicrophone = value(.recordMicrophone, recordMicrophone)
         microphoneDeviceID = value(.microphoneDeviceID, microphoneDeviceID)
         recordSystemAudio = value(.recordSystemAudio, recordSystemAudio)
+        interfaceScale = value(.interfaceScale, interfaceScale)
     }
 }

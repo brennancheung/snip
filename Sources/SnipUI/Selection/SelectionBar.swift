@@ -1,7 +1,7 @@
 import AppKit
 
 /// The small bar by the selection: its pixel size, the microphone and system audio toggles,
-/// Record ↩ and Cancel esc.
+/// Record ↩ and Cancel esc, all at the interface size.
 final class SelectionBar: NSView {
     var onRecord: @MainActor () -> Void = {}
     var onCancel: @MainActor () -> Void = {}
@@ -9,18 +9,19 @@ final class SelectionBar: NSView {
     private let sizeLabel = NSTextField(labelWithString: "")
     private let stack: NSStackView
 
-    init() {
-        let record = BarButton(title: "Record ↩", target: nil, action: nil)
-        let cancel = BarButton(title: "Cancel esc", target: nil, action: nil)
-        stack = NSStackView(views: [sizeLabel, AudioToggles(), record, cancel])
+    init(scale: UIScale) {
+        let record = BezelButton(title: "Record", keycap: "↩", font: scale.font(13, weight: .medium), scale: scale)
+        record.isProminent = true
+        let cancel = BezelButton(title: "Cancel", keycap: "esc", font: scale.font(13), scale: scale)
+        stack = NSStackView(views: [sizeLabel, AudioToggles(scale: scale), record, cancel])
         super.init(frame: .zero)
 
         appearance = NSAppearance(named: .darkAqua)
         wantsLayer = true
         layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.92).cgColor
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = scale.metric(8)
 
-        sizeLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        sizeLabel.font = scale.monospacedDigitFont(12, weight: .medium)
         sizeLabel.textColor = .white
         record.target = self
         record.action = #selector(recordClicked)
@@ -30,8 +31,9 @@ final class SelectionBar: NSView {
         cancel.keyEquivalent = "\u{1b}"
 
         stack.orientation = .horizontal
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 6)
+        stack.spacing = scale.metric(8)
+        let inset = scale.metric(6)
+        stack.edgeInsets = NSEdgeInsets(top: inset, left: scale.metric(12), bottom: inset, right: inset)
         stack.autoresizingMask = [.width, .height]
         addSubview(stack)
     }
@@ -52,9 +54,4 @@ final class SelectionBar: NSView {
     override func mouseDown(with event: NSEvent) {}
     override func mouseUp(with event: NSEvent) {}
     override func rightMouseDown(with event: NSEvent) {}
-}
-
-/// Works on the first click even when its panel isn't key yet.
-private final class BarButton: NSButton {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

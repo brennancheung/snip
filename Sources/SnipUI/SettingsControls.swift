@@ -1,155 +1,248 @@
 import AppKit
 import SwiftUI
 
-// AppKit controls for the Settings window. SwiftUI's segmented pickers, popups and bordered
-// buttons draw their text at the system size whatever `.font` says; these set the font themselves.
+// The Settings window's controls, drawn by Snip at the interface size. AppKit's bezelled
+// controls (and SwiftUI's, which are AppKit underneath) keep a fixed height for each control
+// size whatever their font, so their text was tiny or clipped on a large 1x monitor. These
+// size themselves from `UIScale`, text and bezel together.
 
-/// A segmented control (one choice of a few) with its labels at `fontSize`.
-struct SegmentedControl<Value: Hashable>: NSViewRepresentable {
-    @Binding var selection: Value
-    var options: [(label: String, value: Value)]
-    var fontSize: CGFloat
+/// The rounded bezel shared by Settings' buttons and popup; `BezelButton` is the AppKit twin.
+struct BezelButtonStyle: ButtonStyle {
+    var scale: UIScale
 
-    func makeCoordinator() -> ControlAction { ControlAction() }
-
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let control = NSSegmentedControl()
-        control.trackingMode = .selectOne
-        control.segmentStyle = .automatic
-        control.target = context.coordinator
-        control.action = #selector(ControlAction.fire(_:))
-        return control
-    }
-
-    func updateNSView(_ control: NSSegmentedControl, context: Context) {
-        context.coordinator.handler = { sender in
-            let index = (sender as? NSSegmentedControl)?.selectedSegment ?? -1
-            if options.indices.contains(index) { selection = options[index].value }
-        }
-        control.controlSize = NSControl.ControlSize(context.environment.controlSize)
-        control.font = .systemFont(ofSize: fontSize)
-        control.segmentCount = options.count
-        for (index, option) in options.enumerated() {
-            control.setLabel(option.label, forSegment: index)
-            control.setWidth(0, forSegment: index)  // fit the label
-        }
-        control.selectedSegment = options.firstIndex { $0.value == selection } ?? -1
-        control.invalidateIntrinsicContentSize()
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
-        nsView.intrinsicContentSize
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: scale.metric(6), style: .continuous)
+        configuration.label
+            .padding(.horizontal, scale.metric(10))
+            .padding(.vertical, scale.metric(4))
+            .background(shape.fill(Color.primary.opacity(configuration.isPressed ? 0.2 : 0.1)))
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+            .contentShape(shape)
     }
 }
 
-/// A popup menu with its title and items at `fontSize`.
-struct PopUpControl<Value: Hashable>: NSViewRepresentable {
-    @Binding var selection: Value
-    var options: [(label: String, value: Value)]
-    var fontSize: CGFloat
-
-    func makeCoordinator() -> ControlAction { ControlAction() }
-
-    func makeNSView(context: Context) -> NSPopUpButton {
-        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-        popup.target = context.coordinator
-        popup.action = #selector(ControlAction.fire(_:))
-        return popup
-    }
-
-    func updateNSView(_ popup: NSPopUpButton, context: Context) {
-        context.coordinator.handler = { sender in
-            let index = (sender as? NSPopUpButton)?.indexOfSelectedItem ?? -1
-            if options.indices.contains(index) { selection = options[index].value }
-        }
-        popup.controlSize = NSControl.ControlSize(context.environment.controlSize)
-        let font = NSFont.systemFont(ofSize: fontSize)
-        popup.font = font
-        popup.menu?.font = font
-        let titles = options.map(\.label)
-        if popup.itemArray.map(\.title) != titles {
-            // Items one by one: addItems(withTitles:) drops duplicate names, e.g. two "USB Audio".
-            popup.removeAllItems()
-            for title in titles {
-                popup.menu?.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: ""))
-            }
-        }
-        popup.selectItem(at: options.firstIndex { $0.value == selection } ?? -1)
-        popup.invalidateIntrinsicContentSize()
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSPopUpButton, context: Context) -> CGSize? {
-        nsView.intrinsicContentSize
-    }
-}
-
-/// A push button with its title at `fontSize`.
-struct PushButton: NSViewRepresentable {
+/// A push button with its title at body size.
+struct PushButton: View {
     var title: String
-    var fontSize: CGFloat
+    var scale: UIScale
     var action: () -> Void
 
-    func makeCoordinator() -> ControlAction { ControlAction() }
-
-    func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(frame: .zero)
-        button.bezelStyle = .push
-        button.setButtonType(.momentaryPushIn)
-        button.target = context.coordinator
-        button.action = #selector(ControlAction.fire(_:))
-        return button
-    }
-
-    func updateNSView(_ button: NSButton, context: Context) {
-        context.coordinator.handler = { _ in action() }
-        button.controlSize = NSControl.ControlSize(context.environment.controlSize)
-        button.attributedTitle = NSAttributedString.controlTitle(title, font: .systemFont(ofSize: fontSize))
-        button.invalidateIntrinsicContentSize()
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSButton, context: Context) -> CGSize? {
-        nsView.intrinsicContentSize
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(scale.text(13))
+        }
+        .buttonStyle(BezelButtonStyle(scale: scale))
     }
 }
 
-/// The target of an AppKit control's action; calls `handler`.
+/// A segmented control: one choice of a few, the chosen one filled with the accent colour.
+struct SegmentedControl<Value: Hashable>: View {
+    @Binding var selection: Value
+    var options: [(label: String, value: Value)]
+    var scale: UIScale
+
+    var body: some View {
+        let outer = RoundedRectangle(cornerRadius: scale.metric(7), style: .continuous)
+        HStack(spacing: scale.metric(2)) {
+            ForEach(options.indices, id: \.self) { index in
+                segment(options[index])
+            }
+        }
+        .padding(scale.metric(2))
+        .background(outer.fill(Color.primary.opacity(0.08)))
+        .overlay(outer.strokeBorder(Color.primary.opacity(0.15), lineWidth: 1))
+    }
+
+    private func segment(_ option: (label: String, value: Value)) -> some View {
+        let chosen = option.value == selection
+        return Button {
+            selection = option.value
+        } label: {
+            Text(option.label)
+                .font(scale.text(13, weight: chosen ? .medium : .regular))
+                .foregroundStyle(chosen ? Color.white : Color.primary)
+                .padding(.horizontal, scale.metric(10))
+                .padding(.vertical, scale.metric(3))
+                .frame(minWidth: scale.metric(34))
+                .background(
+                    RoundedRectangle(cornerRadius: scale.metric(5), style: .continuous)
+                        .fill(chosen ? Color.accentColor : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+}
+
+/// A popup: the chosen option and a chevron in a bezel; clicking opens a menu of the options,
+/// its items at the same size.
+struct PopUpControl<Value: Hashable>: View {
+    @Binding var selection: Value
+    var options: [(label: String, value: Value)]
+    var scale: UIScale
+    @State private var anchor = MenuAnchor()
+
+    var body: some View {
+        let chosen = options.firstIndex { $0.value == selection }
+        Button {
+            anchor.popUp(titles: options.map(\.label), chosen: chosen, font: scale.font(13)) { index in
+                if options.indices.contains(index) { selection = options[index].value }
+            }
+        } label: {
+            HStack(spacing: scale.metric(8)) {
+                Text(chosen.map { options[$0].label } ?? "")
+                    .font(scale.text(13))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(scale.text(9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(BezelButtonStyle(scale: scale))
+        .background(MenuAnchorView(anchor: anchor))
+    }
+}
+
+/// Opens a popup's menu over the AppKit view behind it.
 @MainActor
-final class ControlAction: NSObject {
-    var handler: (NSControl) -> Void = { _ in }
+final class MenuAnchor: NSObject {
+    weak var view: NSView?
+    private var onPick: (Int) -> Void = { _ in }
 
-    @objc func fire(_ sender: NSControl) { handler(sender) }
+    func popUp(titles: [String], chosen: Int?, font: NSFont, onPick: @escaping (Int) -> Void) {
+        guard let view else { return }
+        self.onPick = onPick
+        let menu = NSMenu()
+        menu.font = font
+        menu.autoenablesItems = false
+        menu.minimumWidth = view.bounds.width
+        for (index, title) in titles.enumerated() {
+            let item = NSMenuItem(title: title, action: #selector(picked(_:)), keyEquivalent: "")
+            item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
+            item.target = self
+            item.tag = index
+            item.state = index == chosen ? .on : .off
+            menu.addItem(item)
+        }
+        // The chosen item over the button, as a popup button does.
+        let item = chosen.flatMap { menu.items.indices.contains($0) ? menu.items[$0] : nil }
+        let top = view.isFlipped ? 0 : view.bounds.height
+        menu.popUp(positioning: item, at: NSPoint(x: 0, y: top), in: view)
+    }
+
+    @objc private func picked(_ item: NSMenuItem) { onPick(item.tag) }
 }
 
-extension NSControl.ControlSize {
-    /// AppKit's size for SwiftUI's. AppKit's .extraLarge needs macOS 26 (the package targets 15),
-    /// so SwiftUI's .extraLarge becomes .large.
-    init(_ size: SwiftUI.ControlSize) {
-        switch size {
-        case .mini: self = .mini
-        case .small: self = .small
-        case .large, .extraLarge: self = .large
-        default: self = .regular
+/// A plain NSView the size of the popup, so its menu can open in the right place.
+private struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        anchor.view = view
+    }
+}
+
+/// A switch, drawn at the interface size.
+struct ScaledSwitch<Label: View>: View {
+    @Binding var isOn: Bool
+    var scale: UIScale
+    /// What VoiceOver reads it as.
+    var label: Label
+
+    var body: some View {
+        let inset = scale.metric(2)
+        Capsule()
+            .fill(isOn ? Color.accentColor : Color.primary.opacity(0.18))
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle()
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.3), radius: scale.metric(1), y: scale.metric(0.5))
+                    .padding(inset)
+            }
+            .frame(width: scale.metric(36), height: scale.metric(20))
+            .contentShape(Capsule())
+            .onTapGesture {
+                withAnimation(.easeOut(duration: 0.15)) { isOn.toggle() }
+            }
+            .accessibilityRepresentation {
+                Toggle(isOn: $isOn) { label }
+            }
+    }
+}
+
+/// A slider with a round knob and the filled part of the track in the accent colour.
+/// Arrow keys step it once it has focus.
+struct ScaledSlider: View {
+    @Binding var value: Double
+    var range: ClosedRange<Double>
+    var step: Double
+    var scale: UIScale
+
+    var body: some View {
+        let knob = scale.metric(20)
+        GeometryReader { geometry in
+            let usable = max(geometry.size.width - knob, 1)
+            let span = range.upperBound - range.lowerBound
+            let fraction = span > 0 ? (min(max(value, range.lowerBound), range.upperBound) - range.lowerBound) / span : 0
+            let track = scale.metric(4)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.18))
+                    .frame(width: usable, height: track)
+                    .offset(x: knob / 2)
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: usable * fraction, height: track)
+                    .offset(x: knob / 2)
+                Circle()
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.3), radius: scale.metric(1.5), y: scale.metric(0.5))
+                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
+                    .frame(width: knob, height: knob)
+                    .offset(x: usable * fraction)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                set(range.lowerBound + Double((drag.location.x - knob / 2) / usable) * span)
+            })
+        }
+        .frame(height: knob + scale.metric(4))
+        .frame(minWidth: scale.metric(120))
+        .focusable()
+        .onMoveCommand { direction in
+            switch direction {
+            case .left, .down: set(value - step)
+            default: set(value + step)
+            }
+        }
+        .accessibilityRepresentation {
+            Slider(value: $value, in: range, step: step)
         }
     }
-}
 
-extension NSAttributedString {
-    /// A centred button title in `font`. A button's plain `font` doesn't always hold, this does.
-    static func controlTitle(_ title: String, font: NSFont) -> NSAttributedString {
-        let centred = NSMutableParagraphStyle()
-        centred.alignment = .center
-        return NSAttributedString(string: title, attributes: [
-            .font: font,
-            .foregroundColor: NSColor.controlTextColor,
-            .paragraphStyle: centred,
-        ])
+    /// `newValue` rounded to a step and kept in range.
+    private func set(_ newValue: Double) {
+        let stepped = step > 0 ? ((newValue - range.lowerBound) / step).rounded() * step + range.lowerBound : newValue
+        let clamped = min(max(stepped, range.lowerBound), range.upperBound)
+        if clamped != value { value = clamped }
     }
 }
 
 /// A Settings row: the label on the left, vertically centred on the control on the right.
 struct CentredRowStyle: LabeledContentStyle {
+    var scale: UIScale
+
     func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: scale.metric(12)) {
             configuration.label
                 .layoutPriority(1)
             Spacer(minLength: 0)
@@ -160,14 +253,14 @@ struct CentredRowStyle: LabeledContentStyle {
 
 /// A Settings switch row: the label on the left, vertically centred on the switch on the right.
 struct CentredSwitchStyle: ToggleStyle {
+    var scale: UIScale
+
     func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: scale.metric(12)) {
             configuration.label
                 .layoutPriority(1)
             Spacer(minLength: 0)
-            Toggle(isOn: configuration.$isOn) { configuration.label }
-                .toggleStyle(.switch)
-                .labelsHidden()
+            ScaledSwitch(isOn: configuration.$isOn, scale: scale, label: configuration.label)
         }
     }
 }

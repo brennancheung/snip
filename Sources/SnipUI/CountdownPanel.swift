@@ -1,6 +1,6 @@
 import AppKit
 
-/// A big 3, 2, 1 centred on the selection. Click-through; Escape cancels.
+/// A big 3, 2, 1 centred on the selection, at the interface size. Click-through; Escape cancels.
 @MainActor
 final class CountdownPanel {
     private final class Panel: NSPanel {
@@ -16,8 +16,10 @@ final class CountdownPanel {
     private let label = NSTextField(labelWithString: "")
     private var cancelled = false
 
-    init(centredOn area: CGRect) {
-        let side: CGFloat = 132
+    /// `scale`: the interface size, the saved one if nil.
+    init(centredOn area: CGRect, scale: UIScale? = nil) {
+        let ui = scale ?? .current
+        let side = ui.metric(132)
         let frame = CGRect(x: area.midX - side / 2, y: area.midY - side / 2, width: side, height: side)
         panel = Panel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.configureAsSnipOverlay(level: .screenSaver)
@@ -27,9 +29,9 @@ final class CountdownPanel {
         let background = NSView(frame: CGRect(origin: .zero, size: frame.size))
         background.wantsLayer = true
         background.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-        background.layer?.cornerRadius = 28
+        background.layer?.cornerRadius = ui.metric(28)
 
-        label.font = .monospacedDigitSystemFont(ofSize: 80, weight: .semibold)
+        label.font = ui.monospacedDigitFont(80, weight: .semibold)
         label.textColor = .white
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -40,6 +42,14 @@ final class CountdownPanel {
         ])
         panel.contentView = background
         panel.onEscape = { [weak self] in self?.cancel() }
+    }
+
+    /// The panel's content showing `number`, for rendering it without showing it (UIPreviews).
+    func previewView(number: Int) -> NSView {
+        label.stringValue = "\(number)"
+        let view = panel.contentView!
+        view.layoutSubtreeIfNeeded()
+        return view
     }
 
     /// Counts down from `seconds`, calling `tick` with each number. Returns false if cancelled.

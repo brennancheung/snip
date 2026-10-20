@@ -135,93 +135,85 @@ final class SettingsModel: ObservableObject {
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
-
-    // Large on purpose: the default 13 pt is hard to read on a very high-resolution monitor.
-    /// Row labels.
-    private static let bodySize: CGFloat = 17
-    /// Text inside controls (SettingsControls.swift): segments, popups, buttons, the folder path, the shortcut.
-    private static let controlTextSize: CGFloat = 16
-    /// The slider's Sharper and Smaller.
-    private static let scaleSize: CGFloat = 15
-    private static let secondarySize: CGFloat = 14
+    /// Draws at this interface size instead of the saved one (UIPreviews).
+    var scaleOverride: UIScale? = nil
 
     var body: some View {
+        // Every size here is a macOS default (13 pt body, 11 pt small) times the interface size.
+        let ui = scaleOverride ?? UIScale(settings: model.settings)
         Form {
             // Group applies the row padding to each row.
             Group {
-                Slider(value: crf, in: 18...32, step: 1) {
-                    VStack(alignment: .leading, spacing: 2) {
+                row("Interface size", ui) {
+                    PopUpControl(selection: $model.settings.interfaceScale, options: interfaceSizeOptions, scale: ui)
+                }
+
+                row(ui) {
+                    HStack(spacing: ui.metric(8)) {
+                        Text("Sharper").font(ui.text(11)).foregroundStyle(.secondary)
+                        ScaledSlider(value: crf, range: 18...32, step: 1, scale: ui)
+                        Text("Smaller").font(ui.text(11)).foregroundStyle(.secondary)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: ui.metric(2)) {
                         Text("Quality")
                         Text("CRF \(model.settings.crf)")
-                            .font(.system(size: Self.secondarySize))
+                            .font(ui.text(11))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
-                } minimumValueLabel: {
-                    Text("Sharper").font(.system(size: Self.scaleSize))
-                } maximumValueLabel: {
-                    Text("Smaller").font(.system(size: Self.scaleSize))
                 }
 
-                row("Frame rate") {
-                    SegmentedControl(
-                        selection: $model.settings.fps,
-                        options: [("30", 30), ("60", 60)],
-                        fontSize: Self.controlTextSize
-                    )
+                row("Frame rate", ui) {
+                    SegmentedControl(selection: $model.settings.fps, options: [("30", 30), ("60", 60)], scale: ui)
                 }
 
-                row("Resolution") {
+                row("Resolution", ui) {
                     SegmentedControl(
                         selection: $model.settings.scale,
                         options: [("Full", RecordingSettings.Scale.full), ("Half", RecordingSettings.Scale.half)],
-                        fontSize: Self.controlTextSize
+                        scale: ui
                     )
                 }
 
                 Toggle("Show cursor", isOn: $model.settings.showCursor)
-                    .toggleStyle(CentredSwitchStyle())
+                    .toggleStyle(CentredSwitchStyle(scale: ui))
 
-                row("Microphone") {
-                    PopUpControl(
-                        selection: $model.microphone,
-                        options: microphoneOptions,
-                        fontSize: Self.controlTextSize
-                    )
+                row("Microphone", ui) {
+                    PopUpControl(selection: $model.microphone, options: microphoneOptions, scale: ui)
                 }
 
                 Toggle("System audio", isOn: $model.settings.recordSystemAudio)
-                    .toggleStyle(CentredSwitchStyle())
+                    .toggleStyle(CentredSwitchStyle(scale: ui))
 
-                row("Countdown") {
+                row("Countdown", ui) {
                     SegmentedControl(
                         selection: $model.settings.countdownSeconds,
                         options: [("Off", 0), ("3 s", 3), ("5 s", 5)],
-                        fontSize: Self.controlTextSize
+                        scale: ui
                     )
                 }
 
-                row("Save to") {
-                    HStack(spacing: 8) {
+                row("Save to", ui) {
+                    HStack(spacing: ui.metric(8)) {
                         Text(model.folderPath)
-                            .font(.system(size: Self.controlTextSize))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
                             .help(model.settings.resolvedOutputDirectory.path)
-                        PushButton(title: "Change…", fontSize: Self.controlTextSize) { model.chooseFolder() }
-                        PushButton(title: "Show", fontSize: Self.controlTextSize) { model.showFolder() }
+                        PushButton(title: "Change…", scale: ui) { model.chooseFolder() }
+                        PushButton(title: "Show", scale: ui) { model.showFolder() }
                             .help("Show the folder in Finder")
                     }
                 }
 
                 Toggle("Copy to clipboard when done", isOn: $model.settings.copyToClipboard)
-                    .toggleStyle(CentredSwitchStyle())
+                    .toggleStyle(CentredSwitchStyle(scale: ui))
 
-                row("Shortcut") {
+                row("Shortcut", ui) {
                     ShortcutField(
                         hotKey: model.hotKey,
-                        fontSize: Self.controlTextSize,
+                        scale: ui,
                         onRecordingChange: { model.pauseHotKey($0) },
                         onChange: { model.setHotKey($0) }
                     )
@@ -232,23 +224,38 @@ struct SettingsView: View {
                     get: { model.launchAtLogin },
                     set: { model.setLaunchAtLogin($0) }
                 ))
-                .toggleStyle(CentredSwitchStyle())
+                .toggleStyle(CentredSwitchStyle(scale: ui))
             }
-            .padding(.vertical, 5)
+            .padding(.vertical, ui.metric(4))
         }
         .formStyle(.grouped)
-        .font(.system(size: Self.bodySize))
-        .controlSize(.extraLarge)
-        .contentMargins(.horizontal, 28, for: .scrollContent)
-        .contentMargins(.vertical, 24, for: .scrollContent)
-        .frame(width: 620)
+        .font(ui.text(13))
+        .contentMargins(.horizontal, ui.metric(20), for: .scrollContent)
+        .contentMargins(.vertical, ui.metric(16), for: .scrollContent)
+        // The window follows this size, so changing Interface size resizes it at once.
+        .frame(width: ui.metric(460))
         .fixedSize(horizontal: false, vertical: true)
     }
 
     /// A labelled row with the label vertically centred on its control.
-    private func row<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func row<Content: View>(_ title: String, _ ui: UIScale, @ViewBuilder content: () -> Content) -> some View {
         LabeledContent(title, content: content)
-            .labeledContentStyle(CentredRowStyle())
+            .labeledContentStyle(CentredRowStyle(scale: ui))
+    }
+
+    private func row<Content: View, Label: View>(
+        _ ui: UIScale,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+        LabeledContent(content: content, label: label)
+            .labeledContentStyle(CentredRowStyle(scale: ui))
+    }
+
+    /// Automatic, showing what it is on this display, then each size.
+    private var interfaceSizeOptions: [(label: String, value: Double?)] {
+        let automatic = (label: "Automatic (\(UIScale.percent(UIScale.automaticFactor)))", value: Double?.none)
+        return [automatic] + RecordingSettings.interfaceScaleChoices.map { (label: UIScale.percent($0), value: Optional($0)) }
     }
 
     /// Off, then each input by its id.

@@ -61,6 +61,8 @@ public final class SelectionOverlay {
     private var shift = false
     /// Space went down while the mouse was down, and hasn't come up: the drag moves the box.
     private var spaceHeld = false
+    /// The interface size, read when the overlay opens.
+    private var ui = UIScale(1)
     private var previousApp: NSRunningApplication?
     private var screenObserver: NSObjectProtocol?
     private var resignObserver: NSObjectProtocol?
@@ -86,6 +88,7 @@ public final class SelectionOverlay {
             return
         }
         screens = nsScreens.map(ScreenInfo.init)
+        ui = UIScale.current
         windows = WindowList.onScreen(primaryHeight: primary.frame.height)
         pointer = NSEvent.mouseLocation
         hintScreen = screenIndex(at: pointer)
@@ -97,7 +100,7 @@ public final class SelectionOverlay {
 
         for (screen, info) in zip(nsScreens, screens) {
             let panel = OverlayPanel(screen: screen)
-            let view = OverlayView(screen: info, overlay: self)
+            let view = OverlayView(screen: info, overlay: self, scale: ui)
             panel.contentView = view
             panel.makeFirstResponder(view)
             panels.append(panel)
@@ -177,7 +180,7 @@ public final class SelectionOverlay {
             mode = .pressing(start: p, screen: screenIndex(at: p), previous: nil)
         case .selected(let pick, _):
             if case .region(let rect, let screen) = pick {
-                if let handle = SelectionGeometry.handle(at: p, in: rect) {
+                if let handle = SelectionGeometry.handle(at: p, in: rect, scale: ui.factor) {
                     let h = handle.point(in: rect)
                     let offset = CGSize(width: h.x - p.x, height: h.y - p.y)
                     mode = .editing(rect: rect, screen: screen, edit: .resize(original: rect, handle: handle, offset: offset, moved: .zero))
@@ -453,7 +456,7 @@ public final class SelectionOverlay {
     private func updateCursor() {
         switch mode {
         case .selected(.region(let rect, _), _):
-            if let handle = SelectionGeometry.handle(at: pointer, in: rect) {
+            if let handle = SelectionGeometry.handle(at: pointer, in: rect, scale: ui.factor) {
                 switch handle {
                 case .left, .right: NSCursor.resizeLeftRight.set()
                 case .top, .bottom: NSCursor.resizeUpDown.set()
@@ -478,6 +481,13 @@ struct ScreenInfo {
     let visibleFrame: CGRect
     let scale: CGFloat
     let displayID: CGDirectDisplayID
+
+    init(frame: CGRect, visibleFrame: CGRect, scale: CGFloat, displayID: CGDirectDisplayID) {
+        self.frame = frame
+        self.visibleFrame = visibleFrame
+        self.scale = scale
+        self.displayID = displayID
+    }
 
     @MainActor init(_ screen: NSScreen) {
         frame = screen.frame
