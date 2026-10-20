@@ -55,8 +55,11 @@ final class DonePanel: NSObject {
             let size = await DonePanelView.videoSize(of: file)
             guard !closed else { return }
             videoSize = size
-            build()
-            place(near: area, target: target)
+            let mouse = NSEvent.mouseLocation
+            let screen = area.flatMap(ScreenGeometry.screen(for:))
+                ?? NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main
+            build(on: screen)
+            place(near: area, target: target, on: screen)
             panel.orderFrontRegardless()
             NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged),
                                                    name: SettingsStore.didChange, object: nil)
@@ -73,10 +76,22 @@ final class DonePanel: NSObject {
         onClose?()
     }
 
-    private func build() {
+    /// Builds the content for the current interface size, with the preview made smaller if the
+    /// whole panel wouldn't fit on `screen`.
+    private func build(on screen: NSScreen?) {
         guard let videoSize else { return }
         builtScale = UIScale.metric(100) / 100
-        let view = DonePanelView(file: file, videoSize: videoSize, note: note, player: player)
+        var view = DonePanelView(file: file, videoSize: videoSize, note: note, player: player)
+        if let visible = screen?.visibleFrame {
+            let margin = UIScale.metric(8)
+            let overflow = CGSize(width: view.fittingSize.width - (visible.width - 2 * margin),
+                                  height: view.fittingSize.height - (visible.height - 2 * margin))
+            if overflow.width > 0 || overflow.height > 0 {
+                let limit = CGSize(width: max(view.previewSize.width - max(overflow.width, 0), 1),
+                                   height: max(view.previewSize.height - max(overflow.height, 0), 1))
+                view = DonePanelView(file: file, videoSize: videoSize, note: note, player: player, previewLimit: limit)
+            }
+        }
         view.onClose = { [weak self] in self?.close() }
         panel.contentView = view
         panel.setContentSize(view.fittingSize)
@@ -87,15 +102,13 @@ final class DonePanel: NSObject {
         guard !closed, UIScale.metric(100) / 100 != builtScale else { return }
         let top = panel.frame.maxY
         let centre = panel.frame.midX
-        build()
+        let screen = panel.screen ?? NSScreen.main
+        build(on: screen)
         let size = panel.frame.size
-        move(to: CGPoint(x: centre - size.width / 2, y: top - size.height), on: panel.screen ?? NSScreen.main)
+        move(to: CGPoint(x: centre - size.width / 2, y: top - size.height), on: screen)
     }
 
-    private func place(near area: CGRect?, target: CaptureTarget?) {
-        let mouse = NSEvent.mouseLocation
-        let screen = area.flatMap(ScreenGeometry.screen(for:))
-            ?? NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main
+    private func place(near area: CGRect?, target: CaptureTarget?, on screen: NSScreen?) {
         guard let screen else { return }
         let visible = screen.visibleFrame
         let size = panel.frame.size
@@ -144,6 +157,8 @@ final class DonePanel: NSObject {
 final class DonePanelView: NSVisualEffectView {
     /// After × or Move to Trash.
     var onClose: (() -> Void)?
+    /// The preview's size, which sets the panel's width.
+    let previewSize: CGSize
 
     private let file: URL
     private let player: AVPlayer
@@ -153,8 +168,11 @@ final class DonePanelView: NSVisualEffectView {
 
     /// `videoSize`: the recording's size in pixels, for its aspect ratio (see `videoSize(of:)`).
     /// `player`: one already playing `file`, to keep its position; by default a new one.
-    init(file: URL, videoSize: CGSize, note: String? = nil, player: AVPlayer? = nil) {
+    /// `previewLimit`: the most room the preview may take, to fit a small screen.
+    init(file: URL, videoSize: CGSize, note: String? = nil, player: AVPlayer? = nil, previewLimit: CGSize? = nil) {
         let player = player ?? AVPlayer(url: file)
+        let size = Self.playerSize(for: videoSize, limit: previewLimit)
+        previewSize = size
         self.file = file
         self.player = player
         preview = PreviewView(file: file, player: player)
@@ -168,7 +186,6 @@ final class DonePanelView: NSVisualEffectView {
         layer?.cornerRadius = UIScale.metric(12)
         layer?.masksToBounds = true
 
-        let size = Self.playerSize(for: videoSize)
         preview.onClose = { [weak self] in self?.onClose?() }
 
         let name = NSTextField(labelWithString: file.lastPathComponent)
@@ -241,12 +258,14 @@ final class DonePanelView: NSVisualEffectView {
     }
 
     /// The video fitted in 480 × 360, but at least 360 × 120 so the buttons and the player's
-    /// controls fit (letterboxed). Scaled by the interface size.
-    private static func playerSize(for video: CGSize) -> CGSize {
-        let box = CGSize(width: UIScale.metric(480), height: UIScale.metric(360))
+    /// controls fit (letterboxed). Scaled by the interface size, and no bigger than `limit`.
+    private static func playerSize(for video: CGSize, limit: CGSize?) -> CGSize {
+        let limit = limit ?? CGSize(width: CGFloat.infinity, height: .infinity)
+        let box = CGSize(width: min(UIScale.metric(480), limit.width), height: min(UIScale.metric(360), limit.height))
         let fit = min(box.width / video.width, box.height / video.height)
-        return CGSize(width: max((video.width * fit).rounded(), UIScale.metric(360)),
-                      height: max((video.height * fit).rounded(), UIScale.metric(120)))
+        let minimum = CGSize(width: min(UIScale.metric(360), limit.width), height: min(UIScale.metric(120), limit.height))
+        return CGSize(width: max((video.width * fit).rounded(), minimum.width),
+                      height: max((video.height * fit).rounded(), minimum.height))
     }
 
     private static func formattedSize(of file: URL) -> String {
