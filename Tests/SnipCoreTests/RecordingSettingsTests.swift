@@ -30,3 +30,30 @@ import Testing
     // Again, now that it exists.
     _ = try settings.createOutputDirectory()
 }
+
+@Test func automaticInterfaceSizeIsLargeOnlyOnWideOneXDisplays() {
+    // The owner's 7680 × 2160 monitor at 1x.
+    #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 7680, backingScale: 1) == 2)
+    #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 5120, backingScale: 1) == 2)
+    #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 5000, backingScale: 1) == 1)
+    #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 2560, backingScale: 1) == 1)
+    // Retina: the default sizes are already physically right.
+    #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 7680, backingScale: 2) == 1)
+    #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 1512, backingScale: 2) == 1)
+}
+
+@Test func chosenInterfaceSizeWinsAndStaysInRange() {
+    var settings = RecordingSettings()
+    #expect(settings.interfaceScale == nil)
+    #expect(settings.effectiveInterfaceScale(displayWidth: 7680, backingScale: 1) == 2)
+    #expect(settings.effectiveInterfaceScale(displayWidth: 1512, backingScale: 2) == 1)
+
+    settings.interfaceScale = 1.25
+    #expect(settings.effectiveInterfaceScale(displayWidth: 7680, backingScale: 1) == 1.25)
+    settings.interfaceScale = 9
+    #expect(settings.effectiveInterfaceScale(displayWidth: 1512, backingScale: 2) == 2.5)
+    settings.interfaceScale = 0.1
+    #expect(settings.effectiveInterfaceScale(displayWidth: 1512, backingScale: 2) == 1)
+    settings.interfaceScale = .nan
+    #expect(settings.effectiveInterfaceScale(displayWidth: 7680, backingScale: 1) == 2)
+}

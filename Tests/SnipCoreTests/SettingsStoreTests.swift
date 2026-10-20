@@ -22,6 +22,7 @@ private func freshDefaults() -> UserDefaults {
     settings.recordMicrophone = true
     settings.microphoneDeviceID = "BuiltInMicrophoneDevice"
     settings.recordSystemAudio = false
+    settings.interfaceScale = 1.75
     let decoded = try JSONDecoder().decode(RecordingSettings.self, from: JSONEncoder().encode(settings))
     #expect(decoded == settings)
 }
@@ -34,6 +35,13 @@ private func freshDefaults() -> UserDefaults {
     #expect(decoded == expected)
     // Settings saved before the audio keys existed: microphone off, system audio on.
     #expect(!decoded.recordMicrophone && decoded.microphoneDeviceID == nil && decoded.recordSystemAudio)
+    #expect(decoded.interfaceScale == nil)
+}
+
+@Test func unreadableInterfaceScaleMeansAutomatic() throws {
+    let json = #"{"interfaceScale": "huge"}"#
+    let decoded = try JSONDecoder().decode(RecordingSettings.self, from: Data(json.utf8))
+    #expect(decoded.interfaceScale == nil)
 }
 
 @Test func storePersistsAndNotifies() {
