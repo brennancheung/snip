@@ -1,17 +1,24 @@
-// Draws the shared desktop (wallpaper, menu bar, three windows, Dock) into <div id="desktop">.
-// Each step page adds its own Snip overlay on top. Options come from <body data-*>:
-//   data-snip="idle | open | recording"  how the Snip menu bar item looks
+// Draws the staged desktop (wallpaper, menu bar, three windows, Dock) into <div id="desktop">.
+// Each page adds Snip's UI on top. Options come from <body data-*>:
+//   data-snip="idle | recording"  how Snip's menu bar item looks
+//   data-hide="safari editor terminal"  leaves those windows out
 
-// Geometry the step pages share, in points on the 1440 × 900 screen.
+// Geometry the pages share, in points on the 1440 × 900 screen, top-left origin.
 window.GEO = {
+  // 840 × 500 points: the "Safari · 1680 × 1000" label in ui/overlay-hover@200.png.
   safari: { x: 380, y: 92, w: 840, h: 500 },
-  // The area drawn in step 3 and recorded in steps 4 to 6: 640 × 360 points, 1280 × 720 pixels.
-  area: { x: 566, y: 198, w: 640, h: 360 },
+  // 560 × 300 points: the "1120 × 600" box in ui/overlay-selected@200.png.
+  // The board, its sidebar sized so the columns fit with 10 points to spare on each side.
+  area: { x: 630, y: 156, w: 560, h: 300 },
+  menuBar: 28,
+  dock: 82,
 };
 
 const ICON = {
   apple: '<svg viewBox="0 0 24 24"><path d="M12.15 6.9c-.95 0-2.42-1.08-3.96-1.04-2.04.03-3.91 1.18-4.96 3.01-2.12 3.68-.55 9.1 1.52 12.09 1.01 1.45 2.2 3.09 3.79 3.04 1.52-.07 2.09-.99 3.93-.99 1.83 0 2.35.99 3.96.95 1.64-.03 2.68-1.48 3.68-2.95 1.15-1.69 1.63-3.32 1.66-3.41-.04-.02-3.18-1.22-3.22-4.86-.03-3.04 2.48-4.49 2.6-4.56-1.43-2.09-3.62-2.32-4.39-2.38-2-.16-3.68 1.09-4.61 1.09zM15.53 3.83c.84-1.01 1.4-2.43 1.25-3.83-1.21.05-2.66.8-3.53 1.82-.78.9-1.46 2.34-1.27 3.71 1.34.1 2.71-.69 3.56-1.7"/></svg>',
-  snip: (color = '#fff') => `<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round"><path d="M1.8 5.2V3.6c0-1 .8-1.8 1.8-1.8h1.6M10.8 1.8h1.6c1 0 1.8.8 1.8 1.8v1.6M14.2 10.8v1.6c0 1-.8 1.8-1.8 1.8h-1.6M5.2 14.2H3.6c-1 0-1.8-.8-1.8-1.8v-1.6"/><circle cx="8" cy="8" r="2.4" fill="${color}" stroke="none"/></svg>`,
+  // Snip's status item: the SF Symbols record.circle, and stop.fill in red while recording.
+  record: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#fff" stroke-width="1.3"/><circle cx="8" cy="8" r="3.9" fill="#fff"/></svg>',
+  stop: '<svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="2.6" fill="#ff453a"/></svg>',
   battery: '<svg width="27" height="13" viewBox="0 0 27 13"><rect x="0.75" y="0.75" width="22.5" height="11.5" rx="3.6" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.2"/><rect x="2.6" y="2.6" width="15" height="7.8" rx="2" fill="#fff"/><path d="M24.8 4.4v4.2c.9-.3 1.4-1.1 1.4-2.1s-.5-1.8-1.4-2.1z" fill="#fff" fill-opacity=".55"/></svg>',
   wifi: '<svg width="17" height="13" viewBox="0 0 17 13" fill="#fff"><path d="M8.5 2.3c2.5 0 4.8 1 6.5 2.6.2.2.5.2.7 0l.9-.9c.2-.2.2-.5 0-.7C14.5 1.3 11.6 0 8.5 0S2.5 1.3.4 3.3c-.2.2-.2.5 0 .7l.9.9c.2.2.5.2.7 0 1.7-1.6 4-2.6 6.5-2.6z"/><path d="M8.5 6c1.5 0 2.8.5 3.8 1.4.2.2.5.2.7 0l.9-.9c.2-.2.2-.5 0-.7-1.5-1.3-3.4-2.1-5.4-2.1s-3.9.8-5.4 2.1c-.2.2-.2.5 0 .7l.9.9c.2.2.5.2.7 0 1-.9 2.3-1.4 3.8-1.4z"/><path d="M10.6 9.4c.2-.2.2-.5 0-.7-.6-.5-1.3-.8-2.1-.8s-1.5.3-2.1.8c-.2.2-.2.5 0 .7l1.7 1.7c.2.2.5.2.7 0z"/></svg>',
   search: '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"><circle cx="6.2" cy="6.2" r="4.6"/><path d="M9.7 9.7l3.8 3.8"/></svg>',
@@ -42,45 +49,43 @@ const DOCK = [
   ['trash', false, '<svg viewBox="0 0 52 52"><path d="M12 12h28l-3 34c-.1 1.4-1.3 2.5-2.7 2.5H17.7c-1.4 0-2.6-1.1-2.7-2.5z" fill="rgba(255,255,255,.55)" stroke="rgba(255,255,255,.85)" stroke-width="1"/><ellipse cx="26" cy="12" rx="15" ry="3" fill="rgba(255,255,255,.75)"/><path d="M21 18l1 26M26 18v26M31 18l-1 26" stroke="rgba(120,130,150,.5)" stroke-width="1"/></svg>'],
 ];
 
-const SWIFT = `import AppKit
-import SnipCore
+// An excerpt of Sources/SnipCore/FFmpegEncoder.swift.
+const SWIFT = `/// Re-encodes the intermediate recording with x264 at the chosen CRF, which makes screen
+/// recordings several times smaller than the hardware encode.
+public struct FFmpegEncoder: RecordingEncoder {
+    public let ffmpegURL: URL?
 
-@MainActor
-final class AppController {
-    private(set) var state: RecorderState = .idle
-    private let recorder: ScreenRecorder
-    private let encoder: RecordingEncoder
-    private var settings = SettingsStore.shared.load()
-
-    func newRecording() {
-        guard case .idle = state else { return stop() }
-        overlay.begin { [weak self] target in
-            self?.countdown(then: target)
-        }
+    public static func arguments(
+        intermediate: URL,
+        output: URL,
+        settings: RecordingSettings,
+        audioStreams: Int = 0
+    ) -> [String] {
+        ["-hide_banner", "-y", "-i", intermediate.path]
+        + [
+            "-c:v", "libx264",
+            "-crf", String(settings.crf),
+            "-preset", settings.preset,
+            "-pix_fmt", "yuv420p",
+            // x264 with yuv420p needs even dimensions.
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-fps_mode", "cfr",
+            "-r", String(settings.fps),
+            "-movflags", "+faststart",
+        ]
+        + audioArguments(streams: audioStreams)
+        + ["-progress", "pipe:1", "-nostats", output.path]
     }
+}`;
 
-    private func countdown(then target: CaptureTarget) {
-        state = .countingDown(target)
-        hud.showCountdown(settings.countdownSeconds) {
-            Task { await self.start(target) }
-        }
-    }
-
-    func stop() {
-        guard case .recording(let session) = state else { return }
-        state = .compressing(progress: 0)
-        Task {
-            // Hardware-encoded intermediate, then x264 at the chosen CRF.
-            let movie = try await recorder.stop(session)
-            let output = try await encoder.encode(movie, crf: settings.crf)`;
-
-const KEYWORDS = new Set('import final class private let var func guard case else return in self Task await try weak set'.split(' '));
+const KEYWORDS = new Set('import final class struct public static private let var func guard case else return in self Task await try weak set'.split(' '));
 
 function highlight(line) {
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const comment = line.indexOf('//');
   const code = comment >= 0 ? line.slice(0, comment) : line;
-  const html = esc(code).replace(/@?[A-Za-z_][A-Za-z0-9_]*|\d+/g, (w, i, s) => {
+  const html = esc(code).replace(/"[^"]*"|@?[A-Za-z_][A-Za-z0-9_]*|\d+/g, (w, i, s) => {
+    if (w.startsWith('"')) return `<span class="s">${w}</span>`;
     if (/^\d/.test(w)) return `<span class="n">${w}</span>`;
     if (w.startsWith('@') || KEYWORDS.has(w)) return `<span class="k">${w}</span>`;
     if (/^[A-Z]/.test(w)) return `<span class="ty">${w}</span>`;
@@ -95,7 +100,7 @@ function editor() {
   return `
   <div class="win dark inactive editor" style="left:36px;top:52px;width:900px;height:600px">
     <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div>
-      <div class="tabs"><div class="tab on">AppController.swift</div><div class="tab">SelectionOverlay.swift</div><div class="tab">FFmpegEncoder.swift</div></div>
+      <div class="tabs"><div class="tab on">FFmpegEncoder.swift</div><div class="tab">RecordingSettings.swift</div><div class="tab">AppController.swift</div></div>
     </div>
     <div class="body">
       <div class="tree">
@@ -103,15 +108,16 @@ function editor() {
         <div class="d">▾ Sources</div>
         <div class="d" style="padding-left:20px">▸ Snip</div>
         <div class="d" style="padding-left:20px">▸ SnipCapture</div>
-        <div class="d" style="padding-left:20px">▸ SnipCore</div>
-        <div class="d" style="padding-left:20px">▾ SnipUI</div>
-        <div class="cur-file" style="padding-left:36px">AppController.swift</div>
-        <div style="padding-left:36px">HotKey.swift</div>
-        <div style="padding-left:36px">MenuBar.swift</div>
-        <div style="padding-left:36px">RecordingHUD.swift</div>
-        <div style="padding-left:36px">SelectionOverlay.swift</div>
-        <div style="padding-left:36px">SettingsWindow.swift</div>
+        <div class="d" style="padding-left:20px">▾ SnipCore</div>
+        <div style="padding-left:36px">CaptureTarget.swift</div>
+        <div class="cur-file" style="padding-left:36px">FFmpegEncoder.swift</div>
+        <div style="padding-left:36px">OutputNaming.swift</div>
+        <div style="padding-left:36px">RecentRecordings.swift</div>
+        <div style="padding-left:36px">RecordingSettings.swift</div>
+        <div style="padding-left:36px">SettingsStore.swift</div>
+        <div class="d" style="padding-left:20px">▸ SnipUI</div>
         <div class="d" style="padding-left:20px">▸ snip-cli</div>
+        <div class="d" style="padding-left:20px">▸ snip-ui-preview</div>
         <div class="d">▸ Tests</div>
         <div class="d">▸ docs</div>
         <div>Package.swift</div>
@@ -127,13 +133,12 @@ function terminal() {
   <div class="win dark inactive terminal" style="left:832px;top:614px;width:568px;height:206px">
     <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="title">snip — zsh — 80×24</div></div>
 <pre><span class="b">~/code/snip</span> <span class="g">main</span> <span class="p">❯</span> swift build
-[41/41] Linking snip-cli
 Build complete! (6.12s)
-<span class="b">~/code/snip</span> <span class="g">main</span> <span class="p">❯</span> .build/debug/snip-cli windows
-<span class="g">   ID  APP        TITLE                      SIZE</span>
- 4127  Safari     Fieldnote — Q4 Launch     1680 × 1000
- 4093  Code       AppController.swift       1800 × 1200
- 3981  Terminal   snip — zsh — 80×24        1136 × 412
+<span class="b">~/code/snip</span> <span class="g">main</span> <span class="p">❯</span> bin/build-app
+Build complete! (24.87s)
+Signing with "Snip Local Signing"
+/Users/me/code/snip/build/Snip.app
+<span class="b">~/code/snip</span> <span class="g">main</span> <span class="p">❯</span> open build/Snip.app
 <span class="b">~/code/snip</span> <span class="g">main</span> <span class="p">❯</span> <span class="cur">_</span></pre>
   </div>`;
 }
@@ -197,9 +202,7 @@ function safari() {
 }
 
 function menubar(snip) {
-  const snipItem = snip === 'recording'
-    ? '<div class="item" id="snip-item"><span class="snip-rec"><i></i></span></div>'
-    : `<div class="item ${snip === 'open' ? 'open' : ''}" id="snip-item">${ICON.snip()}</div>`;
+  const snipItem = `<div class="item" id="snip-item">${snip === 'recording' ? ICON.stop : ICON.record}</div>`;
   return `
   <div class="menubar">
     <div class="left">
@@ -223,10 +226,11 @@ function dock() {
     name === 'sep' ? '<div class="sep"></div>' : `<div class="ic ${running ? 'run' : ''}">${svg}</div>`).join('')}</div>`;
 }
 
-window.SNIP_ICON = ICON.snip;
-
 (function draw() {
   const d = document.body.dataset;
-  document.getElementById('desktop').innerHTML =
-    '<div class="wallpaper"></div>' + editor() + terminal() + safari() + dock() + menubar(d.snip || 'idle');
+  const hide = (d.hide || '').split(' ');
+  const windows = { editor, terminal, safari };
+  document.getElementById('desktop').innerHTML = '<div class="wallpaper"></div>'
+    + Object.keys(windows).filter((w) => !hide.includes(w)).map((w) => windows[w]()).join('')
+    + dock() + menubar(d.snip || 'idle');
 })();

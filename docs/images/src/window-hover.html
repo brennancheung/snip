@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Hovering a window</title>
+<link rel="stylesheet" href="desktop.css">
+</head>
+<body data-snip="idle">
+<div class="stage" id="desktop"></div>
+<div class="layer"></div>
+<script src="desktop.js"></script>
+<script src="snip.js"></script>
+<script>
+compose(async () => {
+  const s = GEO.safari;
+  dimAround(s);
+  outline(s, 'accent');
+  const { hint, label } = await hoverPieces();
+  // The hint sits 24 pt under the menu bar, the label 6 pt inside the window's top-left corner.
+  place(hint, 720 - parseFloat(hint.style.width) / 2, GEO.menuBar + 24);
+  place(label, s.x + 6, s.y + 6);
+  cursor(CROSSHAIR, 930 - 11.5, 430 - 11.5);
+});
+</script>
+</body></html>

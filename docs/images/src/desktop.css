@@ -1,13 +1,10 @@
-/* Shared look for the Snip mockups: a macOS 26 (Tahoe) desktop at 1440 × 900 points. */
+/* The staged desktop behind the README images: macOS 26 (Tahoe) at 1440 × 900 points. */
 
 :root {
   --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Noto Sans Symbols 2", "Noto Sans Symbols", sans-serif;
   --mono: "SF Mono", ui-monospace, Menlo, "JetBrains Mono", monospace;
-  --accent: #0a7aff;
-  --record: #ff3b30;
   --label: rgba(0, 0, 0, 0.85);
   --secondary: rgba(0, 0, 0, 0.5);
-  --dim: rgba(0, 0, 0, 0.45);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -78,13 +75,6 @@ body {
 .menubar .clock { padding: 0 6px 0 10px !important; }
 .menubar .item.open { background: rgba(255, 255, 255, 0.24); }
 
-/* The Snip status item while recording: a red stop button (the pill has the time). */
-.menubar .snip-rec {
-  width: 22px; height: 18px; border-radius: 5px; background: var(--record);
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2);
-}
-.menubar .snip-rec i { width: 8px; height: 8px; border-radius: 1.5px; background: #fff; display: block; }
 
 /* ---------- Windows ---------- */
 
@@ -125,7 +115,7 @@ body {
 .safari .page { position: absolute; top: 52px; left: 0; right: 0; bottom: 0; display: flex; background: #fbfbfc; }
 
 /* The web app inside Safari: an issue board. */
-.fn-nav { width: 184px; padding: 16px 12px; background: #f3f3f6; border-right: 1px solid #e7e7ec; font-size: 12.5px; color: #3a3a44; }
+.fn-nav { width: 240px; padding: 16px 12px; background: #f3f3f6; border-right: 1px solid #e7e7ec; font-size: 12.5px; color: #3a3a44; }
 .fn-brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; margin: 0 6px 18px; color: #17171f; }
 .fn-brand b { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #7c5cff, #4b8bff); display: block; }
 .fn-nav .link { padding: 6px 8px; border-radius: 7px; display: flex; align-items: center; gap: 9px; }
@@ -134,7 +124,7 @@ body {
 .fn-nav .section { font-size: 11px; color: #9a9aa8; font-weight: 600; margin: 18px 8px 6px; }
 .fn-nav .dot { width: 8px !important; height: 8px !important; border-radius: 50% !important; border: 0 !important; margin: 0 3px; }
 
-.fn-main { flex: 1; padding: 18px 20px; overflow: hidden; }
+.fn-main { flex: 1; padding: 18px 30px; overflow: hidden; }
 .fn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .fn-head h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #17171f; }
 .fn-head h1 span { color: #9a9aa8; font-weight: 500; font-size: 13px; margin-left: 8px; letter-spacing: 0; }
@@ -197,91 +187,47 @@ body {
 .dock .ic.run::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(255, 255, 255, 0.75); }
 .dock .sep { width: 1px; height: 44px; background: rgba(255, 255, 255, 0.35); margin: 0 4px; }
 
-/* ---------- Glass ---------- */
-
-.glass-light {
-  background: rgba(246, 246, 248, 0.72);
-  backdrop-filter: blur(30px) saturate(180%);
-  box-shadow:
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.9),
-    0 0 0 0.5px rgba(0, 0, 0, 0.16),
-    0 14px 40px rgba(0, 0, 0, 0.24);
-}
-.glass-dark {
-  background: rgba(36, 36, 40, 0.7);
-  backdrop-filter: blur(24px) saturate(160%);
-  color: #fff;
-  box-shadow:
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.22),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.12),
-    0 0 0 0.5px rgba(0, 0, 0, 0.5),
-    0 10px 30px rgba(0, 0, 0, 0.35);
-}
-
-/* ---------- Snip overlay pieces ---------- */
+/* ---------- Snip ---------- */
+/* Geometry and colours follow Snip's own code (OverlayView, RecordingBorder, RecordingPill,
+   DonePanel); text and controls are cut from snip-ui-preview's renders in ui/. */
 
 .layer { position: absolute; inset: 0; z-index: 100; }
-
-
-.hint {
-  position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
-  height: 30px; padding: 0 14px; border-radius: 15px;
-  display: flex; align-items: center; gap: 6px; white-space: nowrap;
-  font-size: 12.5px; font-weight: 500;
-}
-.hint .soft { color: rgba(255, 255, 255, 0.55); }
-
-.key {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 18px; padding: 0 5px; border-radius: 5px;
-  font-size: 11px; font-weight: 600;
-  background: rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8);
-}
-
-/* Window hover */
-.win-outline {
-  position: absolute; border-radius: 22px;
-  box-shadow: 0 0 0 3px var(--accent), 0 0 24px 2px rgba(10, 122, 255, 0.45);
-}
-.tag-label {
-  position: absolute; transform: translate(-50%, -50%);
-  height: 30px; padding: 0 13px; border-radius: 15px;
-  display: flex; align-items: center; gap: 7px; white-space: nowrap;
-  font-size: 13px; font-weight: 600;
-}
-.tag-label .soft { color: rgba(255, 255, 255, 0.6); font-weight: 500; }
-
-/* Drawn selection */
-.sel {
-  position: absolute;
-  outline: 1px solid rgba(255, 255, 255, 0.95);
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.25);
-}
-.sel .h {
-  position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
-  border-radius: 50%; background: #fff;
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-
-/* Bar and pill under the selection */
-.bar {
-  position: absolute; transform: translateX(-50%);
-  height: 40px; padding: 0 5px 0 15px; border-radius: 20px;
-  display: flex; align-items: center; gap: 12px; white-space: nowrap;
-  font-size: 13px; font-weight: 500;
-}
-.bar .size { font-weight: 600; margin-right: 2px; }
-.btn {
-  height: 30px; padding: 0 10px 0 12px; border-radius: 15px;
-  display: flex; align-items: center; gap: 7px; font-weight: 600;
-}
-.btn.ghost { background: rgba(255, 255, 255, 0.1); }
-.btn.rec { background: var(--record); }
-.btn.rec .key { background: rgba(255, 255, 255, 0.22); color: #fff; }
-.bar .icon-btn {
-  width: 30px; height: 30px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .cursor { position: absolute; z-index: 200; pointer-events: none; }
+
+/* Overlay: black at 35% around the cut-out. */
+.dim { position: absolute; background: rgba(0, 0, 0, 0.35); }
+/* A hovered window: 3 pt of the accent colour just outside it. A drawn box: 1 pt of white. */
+.outline { position: absolute; }
+.outline.accent { box-shadow: 0 0 0 3px #007aff; }
+.outline.region { box-shadow: 0 0 0 1px #fff; }
+.handle {
+  position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px;
+  background: #fff; border: 0.5px solid rgba(0, 0, 0, 0.4); border-radius: 1.5px;
+}
+/* The overlay's labels: white text on black at 75%, 5 pt corners. */
+.snip-label { position: absolute; background: rgba(0, 0, 0, 0.75); border-radius: 5px; }
+.snip-label img, .cut img { display: block; }
+.cut { position: absolute; overflow: hidden; }
+
+/* Recording: a 2 pt red outline just outside the area. */
+.rec-border { position: absolute; box-shadow: 0 0 0 2px #ff453a; }
+
+/* The pill and the after-recording panel use the dark HUD material, which an off-screen render
+   can't draw; this stands in for it. */
+.hud {
+  position: absolute; overflow: hidden;
+  background: rgba(38, 38, 40, 0.94);
+  backdrop-filter: blur(30px) saturate(150%);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.hud img { display: block; }
+
+/* A titled macOS window in dark mode, for Settings. */
+.sheet {
+  position: absolute; overflow: hidden; border-radius: 16px; background: #1e1e1e;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.6), inset 0 0 0 0.5px rgba(255, 255, 255, 0.15), 0 24px 70px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.sheet .titlebar { height: 32px; display: flex; align-items: center; padding: 0 12px; position: relative; }
+.sheet .titlebar .title { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 600; color: #e5e5e7; }
+.sheet .lights i:nth-child(2), .sheet .lights i:nth-child(3) { background: #4a4a4e; box-shadow: none; }
+.sheet img { display: block; }
