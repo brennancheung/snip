@@ -40,7 +40,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
         self.notification.setUp()
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: SettingsStore.didChange, object: nil)
         applyHotKey(SettingsStore.shared.hotKey)
-        askForScreenRecordingOnce()
+        // Older builds asked only once and remembered it here.
+        UserDefaults.standard.removeObject(forKey: "askedForScreenRecording")
+        requestScreenRecordingIfMissing()
     }
 
     // MARK: Hotkey
@@ -153,7 +155,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
         settingsChanged()
 
         let border = RecordingBorder(target: target, area: area)
-        let pill = RecordingPill(systemAudio: settings.recordSystemAudio)
+        let pill = RecordingPill()
         pill.onStop = { [weak self] in self?.stop() }
         pill.onDiscard = { [weak self] in self?.discard() }
         border.onAreaChange = { [weak pill] area in pill?.follow(area, target: target) }
@@ -167,10 +169,12 @@ public final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// While recording, the microphone follows its setting: the pill's icon, the menu or Settings.
+    /// While recording, the microphone and system audio follow their settings: the pill's icons,
+    /// the menu or Settings.
     @objc private func settingsChanged() {
         guard case .recording = state, let recorder else { return }
         let settings = SettingsStore.shared.settings
+        recorder.setSystemAudio(settings.recordSystemAudio)
         guard settings.recordMicrophone != microphoneOn else { return }
         let on = settings.recordMicrophone
         microphoneOn = on
@@ -222,16 +226,15 @@ public final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// Encodes to the output folder, creating it if it is missing. Without ffmpeg, or if it
-    /// fails, keeps the uncompressed recording (without the microphone) instead and returns a note saying so.
+    /// fails, keeps the uncompressed recording (without the microphone, and without system audio if
+    /// it was off for any of it) instead and returns a note saying so.
     private func encode(_ media: RecordedMedia, startedAt: Date) async throws -> (URL, String?) {
         let intermediate = media.movie
         let settings = SettingsStore.shared.settings
         let output = OutputNaming.outputURL(in: try settings.createOutputDirectory(), date: startedAt, ext: "mp4")
         let note: String
         do {
-            try await FFmpegEncoder().encode(
-                intermediate: intermediate, microphone: media.microphone, to: output, settings: settings
-            ) { [weak self] progress in
+            try await FFmpegEncoder().encode(media, to: output, settings: settings) { [weak self] progress in
                 Task { @MainActor in self?.encodingProgress(progress) }
             }
             media.remove()
@@ -240,6 +243,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
             note = "Not compressed: ffmpeg not found (brew install ffmpeg)."
         } catch {
             note = "Not compressed: ffmpeg failed."
+        }
+        if !media.systemAudioOff.isEmpty {
+            try await MovieAudio.removeAudio(from: intermediate)
         }
         // Moves the intermediate into the output folder as a .mov.
         let fallback = try FFmpegEncoder.fallbackCopy(intermediate: intermediate, to: output)
@@ -308,20 +314,17 @@ public final class AppController: NSObject, NSApplicationDelegate {
 
     // MARK: Screen Recording permission
 
-    private static let askedForScreenRecordingKey = "askedForScreenRecording"
-
-    /// On the first launch without permission, shows the system prompt.
-    private func askForScreenRecordingOnce() {
+    /// Without permission, asks for it. That adds Snip to the Screen Recording list in System
+    /// Settings (again, after a permission reset); macOS itself limits how often its prompt shows.
+    private func requestScreenRecordingIfMissing() {
         guard !CGPreflightScreenCaptureAccess() else { return }
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: Self.askedForScreenRecordingKey) else { return }
-        defaults.set(true, forKey: Self.askedForScreenRecordingKey)
         CGRequestScreenCaptureAccess()
     }
 
-    /// Without permission, explains in one line where to turn it on and returns false.
+    /// Without permission, asks for it, explains in one line where to turn it on and returns false.
     private func hasScreenRecordingPermission() -> Bool {
         guard !CGPreflightScreenCaptureAccess() else { return true }
+        requestScreenRecordingIfMissing()
         let alert = NSAlert()
         alert.messageText = "Snip needs Screen Recording permission"
         alert.informativeText = "Turn on Snip in System Settings › Privacy & Security › Screen & System Audio Recording, then reopen Snip."

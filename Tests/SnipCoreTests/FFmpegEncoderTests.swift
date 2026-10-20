@@ -99,6 +99,36 @@ func argumentsCarryCRFPresetAndFPS(crf: Int, preset: String, fps: Int) {
     #expect(args.last == "/tmp/out.mp4")
 }
 
+@Test func systemAudioIsMutedWhereItWasOff() {
+    let args = FFmpegEncoder.arguments(
+        intermediate: URL(fileURLWithPath: "/tmp/in.mov"), output: URL(fileURLWithPath: "/tmp/out.mp4"),
+        settings: RecordingSettings(), audioStreams: 1,
+        systemAudioOff: [MuteSpan(start: 1.5, end: 3), MuteSpan(start: 7.25, end: nil)]
+    )
+    #expect(args.containsSequence([
+        "-filter_complex",
+        "[0:a:0]volume=enable='between(t,1.500,3.000)':volume=0,volume=enable='gte(t,7.250)':volume=0,"
+            + "aformat=channel_layouts=stereo[a]",
+        "-map", "0:v:0", "-map", "[a]",
+        "-c:a", "aac", "-b:a", "160k",
+    ]))
+}
+
+@Test func systemAudioOffThroughoutIsLeftOut() {
+    let off = [MuteSpan(start: -0.02, end: nil)]
+    let alone = FFmpegEncoder.arguments(
+        intermediate: URL(fileURLWithPath: "/tmp/in.mov"), output: URL(fileURLWithPath: "/tmp/out.mp4"),
+        settings: RecordingSettings(), audioStreams: 1, systemAudioOff: off
+    )
+    #expect(alone.contains("-an"))
+    let span = MicrophoneSpan(url: URL(fileURLWithPath: "/tmp/mic-1.m4a"), offset: 0)
+    let withMicrophone = FFmpegEncoder.arguments(
+        intermediate: URL(fileURLWithPath: "/tmp/in.mov"), output: URL(fileURLWithPath: "/tmp/out.mp4"),
+        settings: RecordingSettings(), audioStreams: 1, microphone: [span], systemAudioOff: off
+    )
+    #expect(withMicrophone.containsSequence(["-filter_complex", "[1:a:0]aformat=channel_layouts=stereo[a]"]))
+}
+
 @Test func probeOutputCountsAudioStreams() {
     let both = InputProbe(ffprobeOutput: """
         stream|codec_type=video|start_time=0.040000
@@ -292,7 +322,7 @@ func microphoneSpanIsHeardOnlyWhereItWasOn(videoDelay: Double, offset: Double) a
 
     let output = directory.appendingPathComponent("out.mp4")
     try await FFmpegEncoder(ffmpegURL: ffmpeg).encode(
-        intermediate: intermediate, microphone: [MicrophoneSpan(url: span, offset: offset)],
+        RecordedMedia(movie: intermediate, microphone: [MicrophoneSpan(url: span, offset: offset)]),
         to: output, settings: RecordingSettings(), progress: { _ in }
     )
     #expect(try streams(of: output, ffmpeg: ffmpeg) == ["video h264", "audio aac 2ch"])
@@ -306,6 +336,35 @@ func microphoneSpanIsHeardOnlyWhereItWasOn(videoDelay: Double, offset: Double) a
     }
     let system = try toneVolume(output, ffmpeg: ffmpeg, frequency: 660, from: 0.1, to: 2.9)
     #expect(system > -40)
+}
+
+@Test(.enabled(if: FFmpegEncoder.locate() != nil, "ffmpeg is not installed"))
+func systemAudioIsSilentWhereItWasOff() async throws {
+    let ffmpeg = try #require(FFmpegEncoder.locate())
+    let directory = try temporaryDirectory()
+    let intermediate = directory.appendingPathComponent("clip.mov")
+    let generate = Process()
+    generate.executableURL = ffmpeg
+    generate.arguments = [
+        "-v", "error", "-f", "lavfi", "-i", "testsrc=duration=3:size=320x240:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=660:duration=3:sample_rate=48000,aformat=channel_layouts=stereo",
+        "-c:a", "pcm_s16le", intermediate.path,
+    ]
+    try generate.run()
+    generate.waitUntilExit()
+    try #require(generate.terminationStatus == 0)
+
+    let output = directory.appendingPathComponent("out.mp4")
+    try await FFmpegEncoder(ffmpegURL: ffmpeg).encode(
+        RecordedMedia(movie: intermediate, systemAudioOff: [MuteSpan(start: 1, end: 2)]),
+        to: output, settings: RecordingSettings(), progress: { _ in }
+    )
+    #expect(try streams(of: output, ffmpeg: ffmpeg) == ["video h264", "audio aac 2ch"])
+    let before = try toneVolume(output, ffmpeg: ffmpeg, frequency: 660, from: 0.1, to: 0.9)
+    let off = try toneVolume(output, ffmpeg: ffmpeg, frequency: 660, from: 1.1, to: 1.9)
+    let after = try toneVolume(output, ffmpeg: ffmpeg, frequency: 660, from: 2.1, to: 2.9)
+    #expect(before > off + 20)
+    #expect(after > off + 20)
 }
 
 extension Array where Element: Equatable {
