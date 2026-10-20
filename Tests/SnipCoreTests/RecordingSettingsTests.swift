@@ -32,7 +32,7 @@ import Testing
 }
 
 @Test func automaticInterfaceSizeIsLargeOnlyOnWideOneXDisplays() {
-    // The owner's 7680 × 2160 monitor at 1x.
+    // A 7680 × 2160 display at 1x.
     #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 7680, backingScale: 1) == 2)
     #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 5120, backingScale: 1) == 2)
     #expect(RecordingSettings.automaticInterfaceScale(displayWidth: 5000, backingScale: 1) == 1)

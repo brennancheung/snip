@@ -1,0 +1,61 @@
+#!/bin/sh
+# Creates "Snip Local Signing", a self-signed code-signing certificate in your login keychain,
+# which bin/build-app then signs with.
+#
+# macOS ties Screen Recording permission to the app's signature. Signed ad hoc, every rebuild is
+# a new app to macOS and it asks for permission again; signed with a certificate that stays the
+# same, the permission survives rebuilds.
+#
+# Nothing trusts this certificate, so `security find-identity -p codesigning` lists it with
+# CSSMERR_TP_NOT_TRUSTED. That is fine for signing builds you run on your own Mac.
+set -eu
+
+name="Snip Local Signing"
+keychain="$HOME/Library/Keychains/login.keychain-db"
+
+if security find-certificate -c "$name" "$keychain" >/dev/null 2>&1; then
+    echo "\"$name\" is already in your login keychain; bin/build-app uses it." >&2
+    echo "To make a new one, delete it in Keychain Access first." >&2
+    exit 1
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+cat >"$tmp/cert.cnf" <<CNF
+[req]
+distinguished_name = dn
+x509_extensions = ext
+prompt = no
+
+[dn]
+CN = $name
+
+[ext]
+basicConstraints = critical,CA:false
+keyUsage = critical,digitalSignature
+extendedKeyUsage = critical,codeSigning
+CNF
+
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+    -keyout "$tmp/key.pem" -out "$tmp/cert.pem" -config "$tmp/cert.cnf" 2>/dev/null
+
+# The keychain can't read OpenSSL 3's default PKCS#12 encryption; -legacy picks one it can.
+# macOS's own openssl (LibreSSL) has no -legacy flag and writes the old format anyway.
+legacy=
+if openssl pkcs12 -help 2>&1 | grep -q -- '-legacy'; then
+    legacy=-legacy
+fi
+password=$(openssl rand -hex 16)
+openssl pkcs12 -export $legacy -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
+    -name "$name" -out "$tmp/snip.p12" -passout "pass:$password"
+
+# -T lets codesign use the private key without asking each time.
+security import "$tmp/snip.p12" -k "$keychain" -P "$password" -T /usr/bin/codesign
+
+if security find-identity -p codesigning "$keychain" | grep -qF "\"$name\""; then
+    echo "Created \"$name\". bin/build-app signs with it from now on." >&2
+else
+    echo "Imported \"$name\", but security find-identity doesn't list it as a code-signing identity." >&2
+    exit 1
+fi

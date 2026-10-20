@@ -2,7 +2,8 @@
 # Builds Snip.app into build/ and signs it.
 # Screen Recording permission is tied to the signature: with ad-hoc signing macOS asks again
 # after every rebuild. So it signs with SNIP_SIGN_IDENTITY if set, else with "Snip Local Signing"
-# (a self-signed certificate in the login keychain) if `security find-identity` lists it, else ad hoc.
+# (a self-signed certificate in the login keychain, made by bin/make-signing-cert) if
+# `security find-identity` lists it, else ad hoc.
 set -eu
 cd "$(dirname "$0")/.."
 
