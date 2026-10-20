@@ -165,7 +165,7 @@ final class DonePanelView: NSVisualEffectView {
     private let player: AVPlayer
     private let ui: UIScale
     private let preview: PreviewView
-    private var copyButton: NSButton?
+    private let copyButton: ActionButton
     private var copiedReset: Task<Void, Never>?
 
     /// `videoSize`: the recording's size in pixels, for its aspect ratio (see `videoSize(of:)`).
@@ -176,7 +176,19 @@ final class DonePanelView: NSVisualEffectView {
          scale: UIScale? = nil) {
         let ui = scale ?? .current
         let player = player ?? AVPlayer(url: file)
-        let size = Self.playerSize(for: videoSize, limit: previewLimit, ui: ui)
+        // The buttons first: their row sets the panel's narrowest width.
+        let copy = ActionButton(title: "Copy", symbol: "doc.on.doc", reserving: "Copied", ui: ui)
+        copyButton = copy
+        let actions: [(ActionButton, Selector)] = [
+            (copy, #selector(DonePanelView.copyFile)),
+            (ActionButton(title: "Show in Finder", symbol: "folder", ui: ui), #selector(DonePanelView.showInFinder)),
+            (ActionButton(title: "Open", symbol: "arrow.up.forward.app", ui: ui), #selector(DonePanelView.openFile)),
+            (ActionButton(title: "Move to Trash", symbol: "trash", ui: ui), #selector(DonePanelView.moveToTrash)),
+        ]
+        let buttons = NSStackView(views: actions.map { $0.0 })
+        buttons.distribution = .equalSpacing
+        buttons.spacing = ui.metric(6)
+        let size = Self.playerSize(for: videoSize, limit: previewLimit, minimumWidth: buttons.fittingSize.width, ui: ui)
         previewSize = size
         self.file = file
         self.player = player
@@ -206,16 +218,10 @@ final class DonePanelView: NSVisualEffectView {
         info.alignment = .firstBaseline
         info.spacing = ui.metric(8)
 
-        let copy = actionButton("Copy", symbol: "doc.on.doc", action: #selector(copyFile))
-        copyButton = copy
-        let buttons = NSStackView(views: [
-            copy,
-            actionButton("Show in Finder", symbol: "folder", action: #selector(showInFinder)),
-            actionButton("Open", symbol: "arrow.up.forward.app", action: #selector(openFile)),
-            actionButton("Move to Trash", symbol: "trash", action: #selector(moveToTrash)),
-        ])
-        buttons.distribution = .fillEqually
-        buttons.spacing = ui.metric(6)
+        for (button, action) in actions {
+            button.target = self
+            button.action = action
+        }
 
         var rows: [NSView] = [preview, info]
         if let note {
@@ -272,13 +278,14 @@ final class DonePanelView: NSVisualEffectView {
         return NSImage(cgImage: frame, size: CGSize(width: frame.width, height: frame.height))
     }
 
-    /// The video fitted in 480 × 360, but at least 360 × 120 so the buttons and the player's
-    /// controls fit (letterboxed). Scaled by the interface size, and no bigger than `limit`.
-    private static func playerSize(for video: CGSize, limit: CGSize?, ui: UIScale) -> CGSize {
+    /// The video fitted in 480 × 360, but at least as wide as the buttons and 120 high so the
+    /// player's controls fit (letterboxed). Scaled by the interface size, and no bigger than `limit`.
+    private static func playerSize(for video: CGSize, limit: CGSize?, minimumWidth: CGFloat, ui: UIScale) -> CGSize {
         let limit = limit ?? CGSize(width: CGFloat.infinity, height: .infinity)
         let box = CGSize(width: min(ui.metric(480), limit.width), height: min(ui.metric(360), limit.height))
         let fit = min(box.width / video.width, box.height / video.height)
-        let minimum = CGSize(width: min(ui.metric(360), limit.width), height: min(ui.metric(120), limit.height))
+        let minimum = CGSize(width: min(max(ui.metric(360), ceil(minimumWidth)), limit.width),
+                             height: min(ui.metric(120), limit.height))
         return CGSize(width: max((video.width * fit).rounded(), minimum.width),
                       height: max((video.height * fit).rounded(), minimum.height))
     }
@@ -308,38 +315,17 @@ final class DonePanelView: NSVisualEffectView {
 
     // MARK: Buttons
 
-    private func actionButton(_ title: String, symbol: String, action: Selector) -> NSButton {
-        let button = NSButton(title: title, image: self.symbol(symbol, title), target: self, action: action)
-        button.imagePosition = .imageAbove
-        button.imageHugsTitle = true
-        button.isBordered = false
-        button.font = ui.font(11)
-        button.contentTintColor = .labelColor
-        button.wantsLayer = true
-        button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
-        button.layer?.cornerRadius = ui.metric(8)
-        button.heightAnchor.constraint(equalToConstant: ui.metric(46)).isActive = true
-        return button
-    }
-
-    private func symbol(_ name: String, _ description: String) -> NSImage {
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
-        return image.withSymbolConfiguration(.init(pointSize: ui.metric(15), weight: .regular)) ?? image
-    }
-
     /// Puts the file on the pasteboard, and says "Copied" on the button for a moment.
     @objc private func copyFile() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.writeObjects([file as NSURL])
-        copyButton?.title = "Copied"
-        copyButton?.image = symbol("checkmark", "Copied")
+        copyButton.show(title: "Copied", symbol: "checkmark")
         copiedReset?.cancel()
         copiedReset = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled, let self else { return }
-            copyButton?.title = "Copy"
-            copyButton?.image = symbol("doc.on.doc", "Copy")
+            copyButton.show(title: "Copy", symbol: "doc.on.doc")
         }
     }
 
@@ -365,6 +351,87 @@ final class DonePanelView: NSVisualEffectView {
             RecentRecordings().remove(url: file)
             self?.onClose?()
         }
+    }
+}
+
+/// A flat button with an SF Symbol and a one-line label side by side, on a rounded fill. It draws
+/// itself so it grows with the interface size; its label is centred, so labels line up across a row.
+@MainActor
+private final class ActionButton: NSButton {
+    private let ui: UIScale
+    private let icon = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+    private let content: NSStackView
+    /// The widest title it will show, so changing the title doesn't change its width.
+    private let reserving: String?
+
+    init(title: String, symbol: String, reserving: String? = nil, ui: UIScale) {
+        self.ui = ui
+        self.reserving = reserving
+        content = NSStackView(views: [icon, label])
+        super.init(frame: .zero)
+        isBordered = false
+        self.title = ""
+        setButtonType(.momentaryPushIn)
+
+        icon.imageScaling = .scaleNone
+        icon.contentTintColor = .labelColor
+        // A fixed width, so a different symbol doesn't move the label.
+        icon.widthAnchor.constraint(equalToConstant: Self.iconWidth(ui)).isActive = true
+        label.font = ui.font(13)
+        label.textColor = .labelColor
+        content.orientation = .horizontal
+        content.alignment = .centerY
+        content.spacing = ui.metric(5)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            content.centerXAnchor.constraint(equalTo: centerXAnchor),
+            content.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        show(title: title, symbol: symbol)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func show(title: String, symbol: String) {
+        label.stringValue = title
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        icon.image = image?.withSymbolConfiguration(.init(pointSize: ui.metric(13), weight: .regular)) ?? image
+        setAccessibilityLabel(title)
+        invalidateIntrinsicContentSize()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let font = ui.font(13)
+        let widest = [label.stringValue, reserving ?? ""]
+            .map { ceil(NSAttributedString(string: $0, attributes: [.font: font]).size().width) }
+            .max() ?? 0
+        return NSSize(width: Self.iconWidth(ui) + content.spacing + widest + 2 * ui.metric(10), height: ui.metric(28))
+    }
+
+    private static func iconWidth(_ ui: UIScale) -> CGFloat {
+        ui.metric(17)
+    }
+
+    // The icon and label are parts of the button, not targets of their own.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        frame.contains(point) ? self : nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var isHighlighted: Bool {
+        didSet { needsDisplay = true }
+    }
+
+    override var wantsUpdateLayer: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let radius = ui.metric(6)
+        let path = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
+        NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.2 : 0.1).setFill()
+        path.fill()
     }
 }
 
