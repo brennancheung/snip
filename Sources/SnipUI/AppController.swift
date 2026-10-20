@@ -40,7 +40,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
         self.notification.setUp()
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: SettingsStore.didChange, object: nil)
         applyHotKey(SettingsStore.shared.hotKey)
-        askForScreenRecordingOnce()
+        // Older builds asked only once and remembered it here.
+        UserDefaults.standard.removeObject(forKey: "askedForScreenRecording")
+        requestScreenRecordingIfMissing()
     }
 
     // MARK: Hotkey
@@ -308,20 +310,17 @@ public final class AppController: NSObject, NSApplicationDelegate {
 
     // MARK: Screen Recording permission
 
-    private static let askedForScreenRecordingKey = "askedForScreenRecording"
-
-    /// On the first launch without permission, shows the system prompt.
-    private func askForScreenRecordingOnce() {
+    /// Without permission, asks for it. That adds Snip to the Screen Recording list in System
+    /// Settings (again, after a permission reset); macOS itself limits how often its prompt shows.
+    private func requestScreenRecordingIfMissing() {
         guard !CGPreflightScreenCaptureAccess() else { return }
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: Self.askedForScreenRecordingKey) else { return }
-        defaults.set(true, forKey: Self.askedForScreenRecordingKey)
         CGRequestScreenCaptureAccess()
     }
 
-    /// Without permission, explains in one line where to turn it on and returns false.
+    /// Without permission, asks for it, explains in one line where to turn it on and returns false.
     private func hasScreenRecordingPermission() -> Bool {
         guard !CGPreflightScreenCaptureAccess() else { return true }
+        requestScreenRecordingIfMissing()
         let alert = NSAlert()
         alert.messageText = "Snip needs Screen Recording permission"
         alert.informativeText = "Turn on Snip in System Settings › Privacy & Security › Screen & System Audio Recording, then reopen Snip."
