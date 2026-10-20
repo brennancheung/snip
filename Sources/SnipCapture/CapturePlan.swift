@@ -85,11 +85,8 @@ struct CapturePlan {
             configuration.sampleRate = 48_000
             configuration.channelCount = 2
         }
-        configuration.captureMicrophone = settings.recordMicrophone
-        if settings.recordMicrophone {
-            // nil records the system default input.
-            configuration.microphoneCaptureDeviceID = settings.microphoneDeviceID
-        }
+        // The microphone is recorded by MicrophoneSpans instead, so it can go on and off mid-recording.
+        configuration.captureMicrophone = false
         return configuration
     }
 

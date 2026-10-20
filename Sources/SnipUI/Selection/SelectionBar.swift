@@ -1,6 +1,7 @@
 import AppKit
 
-/// The small bar by the selection: its pixel size, Record ↩ and Cancel esc.
+/// The small bar by the selection: its pixel size, the microphone and system audio toggles,
+/// Record ↩ and Cancel esc.
 final class SelectionBar: NSView {
     var onRecord: @MainActor () -> Void = {}
     var onCancel: @MainActor () -> Void = {}
@@ -11,7 +12,7 @@ final class SelectionBar: NSView {
     init() {
         let record = BarButton(title: "Record ↩", target: nil, action: nil)
         let cancel = BarButton(title: "Cancel esc", target: nil, action: nil)
-        stack = NSStackView(views: [sizeLabel, record, cancel])
+        stack = NSStackView(views: [sizeLabel, AudioToggles(), record, cancel])
         super.init(frame: .zero)
 
         appearance = NSAppearance(named: .darkAqua)

@@ -23,6 +23,8 @@ public final class AppController: NSObject, NSApplicationDelegate {
     private var border: RecordingBorder?
     private var pill: RecordingPill?
     private var ticker: Timer?
+    /// Whether the current recording has the microphone on; it follows the setting.
+    private var microphoneOn = false
 
     public override init() { super.init() }
 
@@ -36,6 +38,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
         self.statusItem = statusItem
 
         self.notification.setUp()
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: SettingsStore.didChange, object: nil)
         applyHotKey(SettingsStore.shared.hotKey)
         askForScreenRecordingOnce()
     }
@@ -107,16 +110,14 @@ public final class AppController: NSObject, NSApplicationDelegate {
             fail("That window is no longer open.")
             return
         }
-        var settings = SettingsStore.shared.settings
-        // A chosen microphone that was unplugged records the default input instead.
-        settings.microphoneDeviceID = Microphone.available(settings.microphoneDeviceID)
+        let countdownSeconds = SettingsStore.shared.settings.countdownSeconds
         // Out of idle at once, so the menu can't start a second recording while this one starts.
-        state = .countingDown(remaining: settings.countdownSeconds)
+        state = .countingDown(remaining: countdownSeconds)
 
-        if settings.countdownSeconds > 0 {
+        if countdownSeconds > 0 {
             let panel = CountdownPanel(centredOn: area)
             countdown = panel
-            let finished = await panel.run(seconds: settings.countdownSeconds) { remaining in
+            let finished = await panel.run(seconds: countdownSeconds) { remaining in
                 state = .countingDown(remaining: remaining)
             }
             countdown = nil
@@ -125,6 +126,11 @@ public final class AppController: NSObject, NSApplicationDelegate {
                 return
             }
         }
+
+        // Read after the countdown: the audio may have been switched meanwhile.
+        var settings = SettingsStore.shared.settings
+        // A chosen microphone that was unplugged records the default input instead.
+        settings.microphoneDeviceID = Microphone.available(settings.microphoneDeviceID)
 
         let recorder = SCKRecorder()
         // The window closed or sharing was stopped from the system menu: keep what was recorded.
@@ -141,10 +147,13 @@ public final class AppController: NSObject, NSApplicationDelegate {
         }
 
         let startedAt = Date()
+        microphoneOn = settings.recordMicrophone
         state = .recording(startedAt: startedAt)
+        // In case the microphone was switched while the capture started.
+        settingsChanged()
 
         let border = RecordingBorder(target: target, area: area)
-        let pill = RecordingPill(microphone: settings.recordMicrophone)
+        let pill = RecordingPill(systemAudio: settings.recordSystemAudio)
         pill.onStop = { [weak self] in self?.stop() }
         pill.onDiscard = { [weak self] in self?.discard() }
         border.onAreaChange = { [weak pill] area in pill?.follow(area, target: target) }
@@ -155,6 +164,27 @@ public final class AppController: NSObject, NSApplicationDelegate {
 
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
+        }
+    }
+
+    /// While recording, the microphone follows its setting: the pill's icon, the menu or Settings.
+    @objc private func settingsChanged() {
+        guard case .recording = state, let recorder else { return }
+        let settings = SettingsStore.shared.settings
+        guard settings.recordMicrophone != microphoneOn else { return }
+        let on = settings.recordMicrophone
+        microphoneOn = on
+        let deviceID = Microphone.available(settings.microphoneDeviceID)
+        Task {
+            do {
+                try await recorder.setMicrophone(on, deviceID: deviceID)
+            } catch {
+                guard case .recording = state, on else { return }
+                // The mic couldn't open: show it as off again.
+                NSSound.beep()
+                microphoneOn = false
+                SettingsStore.shared.settings.recordMicrophone = false
+            }
         }
     }
 
@@ -172,9 +202,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
 
         Task {
             do {
-                let intermediate = try await recorder.stop()
+                let media = try await recorder.stop()
                 self.recorder = nil
-                let (output, note) = try await encode(intermediate, startedAt: startedAt)
+                let (output, note) = try await encode(media, startedAt: startedAt)
                 finish(output, note: note)
             } catch {
                 self.recorder = nil
@@ -192,16 +222,19 @@ public final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// Encodes to the output folder, creating it if it is missing. Without ffmpeg, or if it
-    /// fails, keeps the uncompressed recording instead and returns a note saying so.
-    private func encode(_ intermediate: URL, startedAt: Date) async throws -> (URL, String?) {
+    /// fails, keeps the uncompressed recording (without the microphone) instead and returns a note saying so.
+    private func encode(_ media: RecordedMedia, startedAt: Date) async throws -> (URL, String?) {
+        let intermediate = media.movie
         let settings = SettingsStore.shared.settings
         let output = OutputNaming.outputURL(in: try settings.createOutputDirectory(), date: startedAt, ext: "mp4")
         let note: String
         do {
-            try await FFmpegEncoder().encode(intermediate: intermediate, to: output, settings: settings) { [weak self] progress in
+            try await FFmpegEncoder().encode(
+                intermediate: intermediate, microphone: media.microphone, to: output, settings: settings
+            ) { [weak self] progress in
                 Task { @MainActor in self?.encodingProgress(progress) }
             }
-            try? FileManager.default.removeItem(at: intermediate)
+            media.remove()
             return (output, nil)
         } catch EncodeError.ffmpegMissing {
             note = "Not compressed: ffmpeg not found (brew install ffmpeg)."
@@ -210,6 +243,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
         }
         // Moves the intermediate into the output folder as a .mov.
         let fallback = try FFmpegEncoder.fallbackCopy(intermediate: intermediate, to: output)
+        for span in media.microphone { try? FileManager.default.removeItem(at: span.url) }
         return (fallback, note)
     }
 

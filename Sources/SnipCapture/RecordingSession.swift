@@ -19,6 +19,10 @@ final class RecordingSession: NSObject, @unchecked Sendable {
     private var outcome: Result<Void, Error>?
     private var waiter: CheckedContinuation<Void, Error>?
     private var stopping = false
+    private var firstFrame: CMTime?
+
+    /// Host time of the first complete frame, where the movie's timeline starts. nil before it arrives.
+    var firstFrameTime: CMTime? { lock.withLock { firstFrame } }
 
     init(filter: SCContentFilter, configuration: SCStreamConfiguration, url: URL) throws {
         self.url = url
@@ -142,7 +146,24 @@ extension RecordingSession: SCStreamDelegate {
 }
 
 extension RecordingSession: SCStreamOutput {
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {}
+    /// Frames are written by the recording output; this only notes when the first one arrived, to
+    /// line the microphone spans up with the movie.
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .screen, lock.withLock({ firstFrame == nil }), Self.isComplete(sampleBuffer) else { return }
+        let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        lock.withLock {
+            if firstFrame == nil { firstFrame = time }
+        }
+    }
+
+    private static func isComplete(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+                as? [[SCStreamFrameInfo: Any]],
+              let rawStatus = attachments.first?[.status] as? Int,
+              let status = SCFrameStatus(rawValue: rawStatus)
+        else { return false }
+        return status == .complete
+    }
 }
 
 extension RecordingSession: SCRecordingOutputDelegate {
