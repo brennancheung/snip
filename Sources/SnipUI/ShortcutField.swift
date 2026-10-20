@@ -35,8 +35,7 @@ struct ShortcutField: NSViewRepresentable {
         case .large, .extraLarge: .large
         default: .regular
         }
-        button.font = .systemFont(ofSize: fontSize)
-        button.invalidateIntrinsicContentSize()
+        if button.titleFont.pointSize != fontSize { button.titleFont = .systemFont(ofSize: fontSize) }
     }
 }
 
@@ -44,6 +43,9 @@ final class ShortcutButton: NSButton {
     var onRecordingChange: ((Bool) -> Void)?
     var onChange: ((HotKeySpec) -> Void)?
     var hotKey = HotKeySpec(keyCode: 0, carbonModifiers: 0) {
+        didSet { refreshTitle() }
+    }
+    var titleFont = NSFont.systemFont(ofSize: NSFont.systemFontSize) {
         didSet { refreshTitle() }
     }
 
@@ -104,7 +106,16 @@ final class ShortcutButton: NSButton {
         onChange?(HotKeySpec(keyCode: keyCode, carbonModifiers: modifiers))
     }
 
+    /// An attributed title, so the font holds whatever the control size is.
     private func refreshTitle() {
-        title = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
+        let text = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        attributedTitle = NSAttributedString(string: text, attributes: [
+            .font: titleFont,
+            .foregroundColor: NSColor.controlTextColor,
+            .paragraphStyle: centred,
+        ])
+        invalidateIntrinsicContentSize()
     }
 }

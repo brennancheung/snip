@@ -134,8 +134,13 @@ final class SettingsModel: ObservableObject {
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
-    /// Large on purpose: the default 13 pt is hard to read on a very high-resolution monitor.
+    // Large on purpose: the default 13 pt is hard to read on a very high-resolution monitor.
+    /// Row labels.
     private static let bodySize: CGFloat = 17
+    /// Text inside controls: segments, popups, buttons, the folder path, the shortcut.
+    private static let controlTextSize: CGFloat = 16
+    /// The slider's Sharper and Smaller.
+    private static let scaleSize: CGFloat = 15
     private static let secondarySize: CGFloat = 14
 
     var body: some View {
@@ -151,51 +156,73 @@ struct SettingsView: View {
                             .monospacedDigit()
                     }
                 } minimumValueLabel: {
-                    Text("Sharper")
+                    Text("Sharper").font(.system(size: Self.scaleSize))
                 } maximumValueLabel: {
-                    Text("Smaller")
+                    Text("Smaller").font(.system(size: Self.scaleSize))
                 }
 
-                Picker("Frame rate", selection: $model.settings.fps) {
-                    Text("30").tag(30)
-                    Text("60").tag(60)
+                LabeledContent("Frame rate") {
+                    Picker("Frame rate", selection: $model.settings.fps) {
+                        Text("30").tag(30)
+                        Text("60").tag(60)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .font(.system(size: Self.controlTextSize))
                 }
-                .pickerStyle(.segmented)
 
-                Picker("Resolution", selection: $model.settings.scale) {
-                    Text("Full").tag(RecordingSettings.Scale.full)
-                    Text("Half").tag(RecordingSettings.Scale.half)
+                LabeledContent("Resolution") {
+                    Picker("Resolution", selection: $model.settings.scale) {
+                        Text("Full").tag(RecordingSettings.Scale.full)
+                        Text("Half").tag(RecordingSettings.Scale.half)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .font(.system(size: Self.controlTextSize))
                 }
-                .pickerStyle(.segmented)
 
                 Toggle("Show cursor", isOn: $model.settings.showCursor)
 
-                Picker("Microphone", selection: $model.microphone) {
-                    Text("Off").tag(String?.none)
-                    ForEach(model.microphones) { input in
-                        Text(input.name).tag(String?.some(input.id))
+                LabeledContent("Microphone") {
+                    Picker("Microphone", selection: $model.microphone) {
+                        Text("Off").tag(String?.none)
+                        ForEach(model.microphones) { input in
+                            Text(input.name).tag(String?.some(input.id))
+                        }
                     }
+                    .labelsHidden()
+                    .font(.system(size: Self.controlTextSize))
                 }
 
                 Toggle("System audio", isOn: $model.settings.recordSystemAudio)
 
-                Picker("Countdown", selection: $model.settings.countdownSeconds) {
-                    Text("Off").tag(0)
-                    Text("3 s").tag(3)
-                    Text("5 s").tag(5)
+                LabeledContent("Countdown") {
+                    Picker("Countdown", selection: $model.settings.countdownSeconds) {
+                        Text("Off").tag(0)
+                        Text("3 s").tag(3)
+                        Text("5 s").tag(5)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .font(.system(size: Self.controlTextSize))
                 }
-                .pickerStyle(.segmented)
 
                 LabeledContent("Save to") {
                     HStack(spacing: 8) {
                         Text(model.folderPath)
+                            .font(.system(size: Self.controlTextSize))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
                             .help(model.settings.resolvedOutputDirectory.path)
                         Button("Change…") { model.chooseFolder() }
+                            .font(.system(size: Self.controlTextSize))
                             .fixedSize()
                         Button("Show") { model.showFolder() }
+                            .font(.system(size: Self.controlTextSize))
                             .fixedSize()
                             .help("Show the folder in Finder")
                     }
@@ -206,7 +233,7 @@ struct SettingsView: View {
                 LabeledContent("Shortcut") {
                     ShortcutField(
                         hotKey: model.hotKey,
-                        fontSize: Self.bodySize,
+                        fontSize: Self.controlTextSize,
                         onRecordingChange: { model.pauseHotKey($0) },
                         onChange: { model.setHotKey($0) }
                     )
@@ -222,7 +249,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .font(.system(size: Self.bodySize))
-        .controlSize(.large)
+        .controlSize(.extraLarge)
         .contentMargins(.horizontal, 28, for: .scrollContent)
         .contentMargins(.vertical, 24, for: .scrollContent)
         .frame(width: 620)
