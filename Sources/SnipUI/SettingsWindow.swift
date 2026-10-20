@@ -178,6 +178,7 @@ struct SettingsView: View {
                 }
 
                 Toggle("Show cursor", isOn: $model.settings.showCursor)
+                    .toggleStyle(CentredSwitchStyle())
 
                 row("Microphone") {
                     PopUpControl(
@@ -188,6 +189,7 @@ struct SettingsView: View {
                 }
 
                 Toggle("System audio", isOn: $model.settings.recordSystemAudio)
+                    .toggleStyle(CentredSwitchStyle())
 
                 row("Countdown") {
                     SegmentedControl(
@@ -212,6 +214,7 @@ struct SettingsView: View {
                 }
 
                 Toggle("Copy to clipboard when done", isOn: $model.settings.copyToClipboard)
+                    .toggleStyle(CentredSwitchStyle())
 
                 row("Shortcut") {
                     ShortcutField(
@@ -227,6 +230,7 @@ struct SettingsView: View {
                     get: { model.launchAtLogin },
                     set: { model.setLaunchAtLogin($0) }
                 ))
+                .toggleStyle(CentredSwitchStyle())
             }
             .padding(.vertical, 5)
         }

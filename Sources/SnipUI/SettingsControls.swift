@@ -157,3 +157,17 @@ struct CentredRowStyle: LabeledContentStyle {
         }
     }
 }
+
+/// A Settings switch row: the label on the left, vertically centred on the switch on the right.
+struct CentredSwitchStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            configuration.label
+                .layoutPriority(1)
+            Spacer(minLength: 0)
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+                .toggleStyle(.switch)
+                .labelsHidden()
+        }
+    }
+}
