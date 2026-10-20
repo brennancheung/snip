@@ -232,6 +232,7 @@ final class OverlayView: NSView {
     }
 
     override func keyDown(with event: NSEvent) { overlay?.keyDown(event) }
+    override func keyUp(with event: NSEvent) { overlay?.keyUp(event) }
 }
 
 /// Hosts the overlay's layers and lets every click through to `OverlayView`.

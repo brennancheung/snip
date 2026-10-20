@@ -21,11 +21,12 @@ public final class SelectionOverlay {
     private enum Edit {
         case move(original: CGRect, from: CGPoint)
         /// `offset` is from the pointer to the handle when the drag began, so the handle doesn't jump.
-        case resize(original: CGRect, handle: Handle, offset: CGSize)
+        /// `moved` is how far holding Space has moved the box during the drag.
+        case resize(original: CGRect, handle: Handle, offset: CGSize, moved: CGSize)
 
         var original: CGRect {
             switch self {
-            case .move(let original, _), .resize(let original, _, _): original
+            case .move(let original, _), .resize(let original, _, _, _): original
             }
         }
     }
@@ -36,7 +37,9 @@ public final class SelectionOverlay {
         /// The mouse is down but hasn't moved far enough to be a drag. A click picks the window
         /// under it; with no window there, `previous` (if any) stays chosen.
         case pressing(start: CGPoint, screen: Int, previous: Pick?)
-        case drawing(start: CGPoint, screen: Int, rect: CGRect)
+        /// Drawing a box from `start`. `offset` is from the pointer to the box's free corner; holding
+        /// Space moves the box, and only a screen edge stopping it leaves the corner off the pointer.
+        case drawing(start: CGPoint, screen: Int, rect: CGRect, offset: CGSize)
         /// Chosen, with the bar showing. `back` is where Space returns from the display.
         case selected(Pick, back: Pick?)
         /// A drawn box being moved or resized.
@@ -56,8 +59,11 @@ public final class SelectionOverlay {
     private var hintVisible = true
     private var pointer = CGPoint.zero
     private var shift = false
+    /// Space went down while the mouse was down, and hasn't come up: the drag moves the box.
+    private var spaceHeld = false
     private var previousApp: NSRunningApplication?
     private var screenObserver: NSObjectProtocol?
+    private var resignObserver: NSObjectProtocol?
 
     public init() {}
 
@@ -85,6 +91,7 @@ public final class SelectionOverlay {
         hintScreen = screenIndex(at: pointer)
         hintVisible = true
         shift = false
+        spaceHeld = false
         mode = .hover(window(at: pointer))
         previousApp = NSWorkspace.shared.frontmostApplication
 
@@ -110,6 +117,14 @@ public final class SelectionOverlay {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.finish(nil) }
         }
+        // Losing focus loses the key up, so treat it as Space released.
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.spaceHeld = false }
+        }
     }
 
     private func finish(_ target: CaptureTarget?) {
@@ -129,6 +144,9 @@ public final class SelectionOverlay {
         windows = []
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
+        spaceHeld = false
         NSCursor.arrow.set()
         if let previousApp, previousApp != NSRunningApplication.current {
             previousApp.activate(options: [])
@@ -152,6 +170,8 @@ public final class SelectionOverlay {
 
     func mouseDown(at p: CGPoint) {
         pointer = p
+        // Only a Space pressed during this drag moves the box, not one still held from before it.
+        spaceHeld = false
         switch mode {
         case .hover:
             mode = .pressing(start: p, screen: screenIndex(at: p), previous: nil)
@@ -160,7 +180,7 @@ public final class SelectionOverlay {
                 if let handle = SelectionGeometry.handle(at: p, in: rect) {
                     let h = handle.point(in: rect)
                     let offset = CGSize(width: h.x - p.x, height: h.y - p.y)
-                    mode = .editing(rect: rect, screen: screen, edit: .resize(original: rect, handle: handle, offset: offset))
+                    mode = .editing(rect: rect, screen: screen, edit: .resize(original: rect, handle: handle, offset: offset, moved: .zero))
                     return
                 }
                 if rect.contains(p) {
@@ -176,16 +196,35 @@ public final class SelectionOverlay {
     }
 
     func mouseDragged(to p: CGPoint, shift: Bool) {
+        let last = pointer
         pointer = p
         self.shift = shift
         switch mode {
         case .pressing(let start, let screen, _):
             guard hypot(p.x - start.x, p.y - start.y) > Self.dragThreshold else { return }
             hintVisible = false
-            mode = .drawing(start: start, screen: screen, rect: drawnRect(from: start, to: p, screen: screen))
+            mode = .drawing(start: start, screen: screen, rect: drawnRect(from: start, to: p, screen: screen), offset: .zero)
             render()
-        case .drawing(let start, let screen, _):
-            mode = .drawing(start: start, screen: screen, rect: drawnRect(from: start, to: p, screen: screen))
+        case .drawing(let start, let screen, _, let offset) where spaceHeld:
+            // Move the box: the start corner and the free corner shift together.
+            let bounds = screens[screen].frame
+            let anchor = SelectionGeometry.clamp(start, to: bounds)
+            let corner = CGPoint(x: last.x + offset.width, y: last.y + offset.height)
+            let box = SelectionGeometry.rect(from: anchor, to: SelectionGeometry.clamp(corner, to: bounds))
+            let move = SelectionGeometry.spaceMove(box: box, pulled: corner, from: last, to: p, within: bounds)
+            let moved = CGPoint(x: anchor.x + move.shift.width, y: anchor.y + move.shift.height)
+            mode = .drawing(start: moved, screen: screen, rect: drawnRect(from: moved, to: p, offset: move.offset, screen: screen), offset: move.offset)
+            render()
+        case .drawing(let start, let screen, _, let offset):
+            mode = .drawing(start: start, screen: screen, rect: drawnRect(from: start, to: p, offset: offset, screen: screen), offset: offset)
+            render()
+        case .editing(let rect, let screen, .resize(let original, let handle, let offset, let moved)) where spaceHeld:
+            // Move the box, and the handle's drag with it, so the resize carries on from there.
+            let pulled = CGPoint(x: last.x + offset.width, y: last.y + offset.height)
+            let move = SelectionGeometry.spaceMove(box: rect, pulled: pulled, from: last, to: p, within: screens[screen].frame)
+            let total = CGSize(width: moved.width + move.shift.width, height: moved.height + move.shift.height)
+            let edit = Edit.resize(original: original, handle: handle, offset: move.offset, moved: total)
+            mode = .editing(rect: edited(edit, to: p, screen: screen), screen: screen, edit: edit)
             render()
         case .editing(_, let screen, let edit):
             mode = .editing(rect: edited(edit, to: p, screen: screen), screen: screen, edit: edit)
@@ -207,7 +246,7 @@ public final class SelectionOverlay {
                 mode = .hover(nil)
                 render()
             }
-        case .drawing(_, let screen, let rect):
+        case .drawing(_, let screen, let rect, _):
             if Self.isUsable(rect) {
                 select(.region(rect, screen: screen), back: nil)
             } else {
@@ -243,10 +282,20 @@ public final class SelectionOverlay {
         case kVK_Return, kVK_ANSI_KeypadEnter:
             record()
         case kVK_Space where !event.isARepeat:
-            toggleDisplay()
+            switch mode {
+            case .pressing, .drawing, .editing:
+                // The mouse is down: hold to move the box instead of resizing it.
+                spaceHeld = true
+            default:
+                toggleDisplay()
+            }
         default:
             break
         }
+    }
+
+    func keyUp(_ event: NSEvent) {
+        if Int(event.keyCode) == kVK_Space { spaceHeld = false }
     }
 
     func record() {
@@ -285,10 +334,10 @@ public final class SelectionOverlay {
         }
     }
 
-    private func drawnRect(from start: CGPoint, to p: CGPoint, screen: Int) -> CGRect {
+    private func drawnRect(from start: CGPoint, to p: CGPoint, offset: CGSize = .zero, screen: Int) -> CGRect {
         let bounds = screens[screen].frame
         let a = SelectionGeometry.clamp(start, to: bounds)
-        let b = SelectionGeometry.clamp(p, to: bounds)
+        let b = SelectionGeometry.clamp(CGPoint(x: p.x + offset.width, y: p.y + offset.height), to: bounds)
         return SelectionGeometry.snapped(SelectionGeometry.rect(from: a, to: b))
     }
 
@@ -297,9 +346,10 @@ public final class SelectionOverlay {
         switch edit {
         case .move(let original, let from):
             return SelectionGeometry.snapped(SelectionGeometry.moved(original, dx: p.x - from.x, dy: p.y - from.y, within: bounds))
-        case .resize(let original, let handle, let offset):
+        case .resize(let original, let handle, let offset, let moved):
+            let start = original.offsetBy(dx: moved.width, dy: moved.height)
             let target = CGPoint(x: p.x + offset.width, y: p.y + offset.height)
-            return SelectionGeometry.snapped(SelectionGeometry.resized(original, handle: handle, to: target, keepAspect: shift, within: bounds))
+            return SelectionGeometry.snapped(SelectionGeometry.resized(start, handle: handle, to: target, keepAspect: shift, within: bounds))
         }
     }
 
@@ -378,7 +428,7 @@ public final class SelectionOverlay {
         case .pressing:
             // Keep what's drawn until this turns out to be a click or a drag.
             return
-        case .drawing(_, let screen, let rect):
+        case .drawing(_, let screen, let rect, _):
             model.cutout = rect
             model.style = .region
             model.handles = true
