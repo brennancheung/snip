@@ -1,26 +1,29 @@
 # Snip
 
-A native macOS menu bar app for short screen recordings. Press **⇧⌘6**, click a window or drag a
-box, and when you stop, a small MP4 is in `~/Movies/snip` and on your clipboard.
+A small macOS menu bar app for recording short screen clips. Press **⇧⌘6**, click a window or drag
+a box, and when you stop, a small MP4 is in `~/Movies/snip` and on your clipboard.
 
 ![A box drawn over a browser window, with Snip's bar under it: 1120 × 600, microphone and speaker toggles, Record and Cancel](docs/images/hero.webp)
 
-## Why use it
+## Why it exists
 
-Snip is for the 20-second clip: a bug report, a PR demo, an answer in Slack. OBS takes scenes and
-sources to set up, and Loom wants an account, an upload and a subscription. Snip does one thing.
+I record a lot of short clips: a bug to report, a change to show in a pull request, a quick
+answer in Slack. OBS was more setup than a 20-second clip deserves, and I didn't want an account
+or an upload for something that should stay a file on my Mac. So I wrote the tool I wanted, and
+I'm sharing it in case it suits you too. It's a personal project: it does what I need, and not
+much more.
 
-- **No account, no upload, no subscription.** Recordings are plain files on your Mac. Nothing is
-  sent anywhere.
-- **Native and light.** AppKit and ScreenCaptureKit, a menu bar item, no Electron. Capture is
-  hardware encoded, so recording costs almost no CPU.
-- **Small files.** When you stop, ffmpeg re-encodes the recording with x264 at a constant rate
-  factor (CRF 23 by default). For screen content that is usually several times smaller than the
-  hardware encode, small enough to attach to an issue or a chat message.
-- **Two keystrokes.** ⇧⌘6, click a window, Return. Or drag a box instead of clicking.
-- **On your clipboard when you stop.** Paste the file into Slack, Mail, Messages or a GitHub
-  comment straight away.
-- **Scriptable.** `snip-cli` records a window, a region or a display from the command line.
+What it does:
+
+- Records a window, a box or a whole display, with system audio and optionally the microphone.
+  Both can be switched on and off while recording.
+- Keeps everything local. There's no account, and nothing is uploaded.
+- Makes small files. Capture is hardware encoded, so recording barely uses the CPU; when you stop,
+  ffmpeg re-encodes with x264 at a constant rate factor (CRF 23 by default). For screen content
+  that is usually several times smaller than the hardware encode.
+- Puts the file on the clipboard when it's done, ready to paste into a chat, an email or a GitHub
+  comment.
+- Comes with `snip-cli`, which records from the command line with the same code.
 
 ## Using it
 
@@ -88,7 +91,7 @@ to show it in Finder), **Settings…** and **Quit Snip**.
 
 ## Getting it running
 
-Snip isn't distributed as a download; you build it from source. It takes a few minutes.
+There's no download; you build it from source. It takes a few minutes.
 
 ### Requirements
 
@@ -221,6 +224,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions.
   certificate runs fine on your own Mac, but if you copy it to another Mac, Gatekeeper will block
   it until it's signed with a Developer ID and notarized.
 - Snip records and compresses; it doesn't trim, annotate or export GIFs.
+- It's maintained in spare time, shaped by one person's workflow. Issues and pull requests are
+  welcome, but replies may be slow.
 
 ## License
 

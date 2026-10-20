@@ -1,8 +1,8 @@
 # Contributing to Snip
 
-Thanks for helping. Snip is small on purpose: a quick way to record a short clip of the screen.
-Bug fixes and polish are welcome; for a new feature, open an issue first so we can talk about
-whether it fits.
+Thanks for helping. Snip is a personal tool kept small on purpose: a quick way to record a short
+clip of the screen. Bug fixes and polish are welcome. For a new feature, open an issue first, since
+it may not fit what Snip is for.
 
 ## Setup
 
