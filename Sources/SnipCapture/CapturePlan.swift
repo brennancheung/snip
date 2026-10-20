@@ -79,7 +79,17 @@ struct CapturePlan {
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         // Displays are usually P3; sRGB is what players and Slack assume, and what ffmpeg tags.
         configuration.colorSpaceName = CGColorSpace.sRGB
-        configuration.capturesAudio = false
+        configuration.capturesAudio = settings.recordSystemAudio
+        if settings.recordSystemAudio {
+            configuration.excludesCurrentProcessAudio = true
+            configuration.sampleRate = 48_000
+            configuration.channelCount = 2
+        }
+        configuration.captureMicrophone = settings.recordMicrophone
+        if settings.recordMicrophone {
+            // nil records the system default input.
+            configuration.microphoneCaptureDeviceID = settings.microphoneDeviceID
+        }
         return configuration
     }
 

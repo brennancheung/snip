@@ -40,8 +40,10 @@ public struct FFmpegEncoder: RecordingEncoder {
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    /// The ffmpeg command line, without the executable.
-    public static func arguments(intermediate: URL, output: URL, settings: RecordingSettings) -> [String] {
+    /// The ffmpeg command line, without the executable. `audioStreams` is how many audio tracks the
+    /// intermediate has: none drops audio, one is encoded to AAC, more (system audio and microphone)
+    /// are mixed into one AAC track.
+    public static func arguments(intermediate: URL, output: URL, settings: RecordingSettings, audioStreams: Int = 0) -> [String] {
         [
             "-hide_banner",
             "-y",
@@ -56,11 +58,31 @@ public struct FFmpegEncoder: RecordingEncoder {
             "-fps_mode", "cfr",
             "-r", String(settings.fps),
             "-movflags", "+faststart",
-            "-an",
+        ]
+        + audioArguments(streams: audioStreams)
+        + [
             "-progress", "pipe:1",
             "-nostats",
             output.path,
         ]
+    }
+
+    private static func audioArguments(streams: Int) -> [String] {
+        let aac = ["-c:a", "aac", "-b:a", "160k"]
+        switch streams {
+        case ..<1:
+            return ["-an"]
+        case 1:
+            return aac
+        default:
+            let inputs = (0..<streams).map { "[0:a:\($0)]" }.joined()
+            return [
+                // normalize=0 keeps each source at its own level instead of dividing by the input count.
+                "-filter_complex", "\(inputs)amix=inputs=\(streams):duration=longest:normalize=0[a]",
+                "-map", "0:v:0",
+                "-map", "[a]",
+            ] + aac
+        }
     }
 
     /// Encodes `intermediate` to `output`, writing to a hidden temporary name in the output folder
@@ -81,7 +103,9 @@ public struct FFmpegEncoder: RecordingEncoder {
         let run = FFmpegRun(
             ffmpeg: ffmpegURL,
             input: intermediate,
-            arguments: Self.arguments(intermediate: intermediate, output: partial, settings: settings)
+            arguments: { audioStreams in
+                Self.arguments(intermediate: intermediate, output: partial, settings: settings, audioStreams: audioStreams)
+            }
         )
         do {
             try await withTaskCancellationHandler {
@@ -146,16 +170,53 @@ struct ProgressParser {
     }
 }
 
+/// What ffprobe says about the intermediate: its duration and how many audio tracks it has.
+struct InputProbe: Equatable {
+    var durationSeconds: Double?
+    var audioStreams: Int
+
+    /// Without ffprobe the audio tracks are unknown: one keeps the first track, if there is one.
+    static let unknown = InputProbe(durationSeconds: nil, audioStreams: 1)
+
+    static let ffprobeArguments = [
+        "-v", "error",
+        "-show_entries", "format=duration:stream=codec_type",
+        "-of", "default=noprint_wrappers=1",
+    ]
+
+    /// Parses ffprobe's `key=value` lines (`codec_type=video`, `codec_type=audio`, `duration=2.0`).
+    init(ffprobeOutput: String) {
+        var duration: Double?
+        var audio = 0
+        for line in ffprobeOutput.split(whereSeparator: \.isNewline) {
+            let parts = line.trimmingCharacters(in: .whitespaces).split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            switch parts[0] {
+            case "codec_type" where parts[1] == "audio": audio += 1
+            case "duration": duration = Double(parts[1])
+            default: break
+            }
+        }
+        self.init(durationSeconds: duration, audioStreams: audio)
+    }
+
+    init(durationSeconds: Double?, audioStreams: Int) {
+        self.durationSeconds = durationSeconds
+        self.audioStreams = audioStreams
+    }
+}
+
 /// One ffmpeg process, run on a background thread so the async caller isn't blocked.
 private final class FFmpegRun: @unchecked Sendable {
     private let ffmpeg: URL
     private let input: URL
-    private let arguments: [String]
+    /// The command line for the number of audio tracks the input has.
+    private let arguments: @Sendable (Int) -> [String]
     private let lock = NSLock()
     private var process: Process?
     private var cancelled = false
 
-    init(ffmpeg: URL, input: URL, arguments: [String]) {
+    init(ffmpeg: URL, input: URL, arguments: @escaping @Sendable (Int) -> [String]) {
         self.ffmpeg = ffmpeg
         self.input = input
         self.arguments = arguments
@@ -182,11 +243,12 @@ private final class FFmpegRun: @unchecked Sendable {
     }
 
     private func runBlocking(progress: @escaping @Sendable (Double) -> Void) throws {
-        var parser = ProgressParser(durationSeconds: probeDuration())
+        let probe = probeInput()
+        var parser = ProgressParser(durationSeconds: probe.durationSeconds)
 
         let process = Process()
         process.executableURL = ffmpeg
-        process.arguments = arguments
+        process.arguments = arguments(probe.audioStreams)
         process.standardInput = FileHandle.nullDevice
         let stdout = Pipe()
         let stderr = Pipe()
@@ -227,28 +289,23 @@ private final class FFmpegRun: @unchecked Sendable {
         }
     }
 
-    /// The input's duration in seconds from the ffprobe next to ffmpeg, or nil (progress then only
-    /// reports completion).
-    private func probeDuration() -> Double? {
+    /// The input's duration and audio track count from the ffprobe next to ffmpeg, or
+    /// `InputProbe.unknown` (progress then only reports completion).
+    private func probeInput() -> InputProbe {
         let ffprobe = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")
-        guard FileManager.default.isExecutableFile(atPath: ffprobe.path) else { return nil }
+        guard FileManager.default.isExecutableFile(atPath: ffprobe.path) else { return .unknown }
         let process = Process()
         process.executableURL = ffprobe
-        process.arguments = [
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            input.path,
-        ]
+        process.arguments = InputProbe.ffprobeArguments + [input.path]
         process.standardInput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         let stdout = Pipe()
         process.standardOutput = stdout
-        do { try process.run() } catch { return nil }
+        do { try process.run() } catch { return .unknown }
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-        return Double(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        guard process.terminationStatus == 0 else { return .unknown }
+        return InputProbe(ffprobeOutput: String(decoding: data, as: UTF8.self))
     }
 }
 

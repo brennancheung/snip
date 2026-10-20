@@ -21,6 +21,10 @@ public struct RecordingSettings: Sendable, Codable, Equatable {
     public var copyToClipboard: Bool = true
     /// Where finished recordings go. nil means ~/Downloads.
     public var outputDirectory: URL? = nil
+    public var recordMicrophone: Bool = false
+    /// The microphone's `AVCaptureDevice.uniqueID`. nil means the system default input.
+    public var microphoneDeviceID: String? = nil
+    public var recordSystemAudio: Bool = false
 
     public init() {}
 
@@ -46,5 +50,8 @@ extension RecordingSettings {
         countdownSeconds = value(.countdownSeconds, countdownSeconds)
         copyToClipboard = value(.copyToClipboard, copyToClipboard)
         outputDirectory = value(.outputDirectory, outputDirectory)
+        recordMicrophone = value(.recordMicrophone, recordMicrophone)
+        microphoneDeviceID = value(.microphoneDeviceID, microphoneDeviceID)
+        recordSystemAudio = value(.recordSystemAudio, recordSystemAudio)
     }
 }
