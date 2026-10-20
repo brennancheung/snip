@@ -19,16 +19,20 @@ private func freshDefaults() -> UserDefaults {
     settings.countdownSeconds = 0
     settings.copyToClipboard = false
     settings.outputDirectory = URL(fileURLWithPath: "/Users/me/Movies", isDirectory: true)
+    settings.recordMicrophone = true
+    settings.microphoneDeviceID = "BuiltInMicrophoneDevice"
+    settings.recordSystemAudio = true
     let decoded = try JSONDecoder().decode(RecordingSettings.self, from: JSONEncoder().encode(settings))
     #expect(decoded == settings)
 }
 
 @Test func missingAndBadKeysFallBackToDefaults() throws {
-    let json = #"{"crf": 30, "scale": "quarter", "fps": "sixty"}"#
+    let json = #"{"crf": 30, "scale": "quarter", "fps": "sixty", "recordMicrophone": "yes"}"#
     let decoded = try JSONDecoder().decode(RecordingSettings.self, from: Data(json.utf8))
     var expected = RecordingSettings()
     expected.crf = 30
     #expect(decoded == expected)
+    #expect(!decoded.recordMicrophone && decoded.microphoneDeviceID == nil && !decoded.recordSystemAudio)
 }
 
 @Test func storePersistsAndNotifies() {

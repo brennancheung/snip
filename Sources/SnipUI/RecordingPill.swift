@@ -1,7 +1,8 @@
 import AppKit
 import SnipCore
 
-/// The floating HUD while recording: ● 0:12, Stop, Discard. During encoding it becomes
+/// The floating HUD while recording: ● 0:12, Stop, Discard, with a mic glyph before the time
+/// while the microphone is recorded. During encoding it becomes
 /// "Compressing…" with a thin progress bar. Draggable; never takes focus.
 @MainActor
 final class RecordingPill: NSObject {
@@ -38,7 +39,8 @@ final class RecordingPill: NSObject {
     private let progressBar = NSProgressIndicator()
     private var userMoved = false
 
-    override init() {
+    /// `microphone`: the microphone is being recorded.
+    init(microphone: Bool) {
         super.init()
         panel.configureAsSnipOverlay(level: .statusBar)
         panel.hasShadow = true
@@ -60,7 +62,12 @@ final class RecordingPill: NSObject {
         discard.toolTip = "Discard"
         discard.contentTintColor = .secondaryLabelColor
 
-        recordingRow.setViews([dot, timeLabel, stop, discard], in: .leading)
+        let mic = NSImageView(image: NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Microphone on")!)
+        mic.symbolConfiguration = .init(pointSize: 11, weight: .regular)
+        mic.contentTintColor = .secondaryLabelColor
+        mic.isHidden = !microphone
+
+        recordingRow.setViews([dot, mic, timeLabel, stop, discard], in: .leading)
         recordingRow.spacing = 8
         recordingRow.setCustomSpacing(12, after: timeLabel)
 

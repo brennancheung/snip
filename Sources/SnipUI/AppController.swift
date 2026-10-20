@@ -107,7 +107,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
             fail("That window is no longer open.")
             return
         }
-        let settings = SettingsStore.shared.settings
+        var settings = SettingsStore.shared.settings
+        // A chosen microphone that was unplugged records the default input instead.
+        settings.microphoneDeviceID = Microphone.available(settings.microphoneDeviceID)
         // Out of idle at once, so the menu can't start a second recording while this one starts.
         state = .countingDown(remaining: settings.countdownSeconds)
 
@@ -142,7 +144,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
         state = .recording(startedAt: startedAt)
 
         let border = RecordingBorder(target: target, area: area)
-        let pill = RecordingPill()
+        let pill = RecordingPill(microphone: settings.recordMicrophone)
         pill.onStop = { [weak self] in self?.stop() }
         pill.onDiscard = { [weak self] in self?.discard() }
         border.onAreaChange = { [weak pill] area in pill?.follow(area, target: target) }

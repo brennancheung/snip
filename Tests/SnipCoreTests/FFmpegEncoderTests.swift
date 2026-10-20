@@ -31,6 +31,41 @@ func argumentsCarryCRFPresetAndFPS(crf: Int, preset: String, fps: Int) {
     #expect(args.last == "/tmp/out.mp4")
 }
 
+@Test func oneAudioStreamIsEncodedToAAC() {
+    let args = FFmpegEncoder.arguments(
+        intermediate: URL(fileURLWithPath: "/tmp/in.mov"), output: URL(fileURLWithPath: "/tmp/out.mp4"),
+        settings: RecordingSettings(), audioStreams: 1
+    )
+    #expect(!args.contains("-an"))
+    #expect(!args.contains("-filter_complex"))
+    #expect(!args.contains("-map"))
+    #expect(args.containsSequence(["-c:a", "aac", "-b:a", "160k"]))
+    #expect(args.last == "/tmp/out.mp4")
+}
+
+@Test func twoAudioStreamsAreMixedIntoOne() {
+    let args = FFmpegEncoder.arguments(
+        intermediate: URL(fileURLWithPath: "/tmp/in.mov"), output: URL(fileURLWithPath: "/tmp/out.mp4"),
+        settings: RecordingSettings(), audioStreams: 2
+    )
+    #expect(!args.contains("-an"))
+    #expect(args.containsSequence([
+        "-filter_complex",
+        "[0:a:0]aformat=channel_layouts=stereo[a0];[0:a:1]aformat=channel_layouts=stereo[a1];"
+            + "[a0][a1]amix=inputs=2:duration=longest:normalize=0[a]",
+        "-map", "0:v:0", "-map", "[a]",
+        "-c:a", "aac", "-b:a", "160k",
+    ]))
+    #expect(args.last == "/tmp/out.mp4")
+}
+
+@Test func probeOutputCountsAudioStreams() {
+    let both = InputProbe(ffprobeOutput: "codec_type=video\ncodec_type=audio\ncodec_type=audio\nduration=4.250000\n")
+    #expect(both == InputProbe(durationSeconds: 4.25, audioStreams: 2))
+    let silent = InputProbe(ffprobeOutput: "codec_type=video\nduration=N/A\n")
+    #expect(silent == InputProbe(durationSeconds: nil, audioStreams: 0))
+}
+
 @Test func progressLinesBecomeFractions() {
     var parser = ProgressParser(durationSeconds: 4)
     #expect(parser.feed(Data("frame=10\nout_time_us=1000000\nout_ti".utf8)) == [0.25])
@@ -103,6 +138,68 @@ func failedEncodeReportsStderr() async throws {
         #expect(!log.isEmpty)
     }
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["broken.mov"])
+}
+
+/// Generates a clip with ffmpeg: a video test pattern plus one sine tone per frequency, each its own track.
+func generateClip(_ ffmpeg: URL, to url: URL, tones: [Int]) throws {
+    var arguments = ["-v", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=321x241:rate=30"]
+    for (index, frequency) in tones.enumerated() {
+        // A mono microphone and a stereo system track, as ScreenCaptureKit may write them.
+        let layout = index == 0 ? "mono" : "stereo"
+        arguments += ["-f", "lavfi", "-i", "sine=frequency=\(frequency):duration=2,aformat=channel_layouts=\(layout)"]
+    }
+    arguments += ["-map", "0:v"]
+    for index in tones.indices { arguments += ["-map", "\(index + 1):a"] }
+    arguments += ["-c:a", "pcm_s16le", url.path]
+    let generate = Process()
+    generate.executableURL = ffmpeg
+    generate.arguments = arguments
+    try generate.run()
+    generate.waitUntilExit()
+    try #require(generate.terminationStatus == 0)
+}
+
+/// The output's streams as ffprobe lists them, e.g. ["video h264", "audio aac 2ch"].
+func streams(of url: URL, ffmpeg: URL) throws -> [String] {
+    let probe = Process()
+    probe.executableURL = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")
+    probe.arguments = ["-v", "error", "-show_entries", "stream=codec_type,codec_name,channels", "-of", "json", url.path]
+    let stdout = Pipe()
+    probe.standardOutput = stdout
+    try probe.run()
+    let data = stdout.fileHandleForReading.readDataToEndOfFile()
+    probe.waitUntilExit()
+    let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let streams = try #require(json["streams"] as? [[String: Any]])
+    return streams.map { stream in
+        let description = "\(stream["codec_type"] ?? "?") \(stream["codec_name"] ?? "?")"
+        guard let channels = stream["channels"] else { return description }
+        return description + " \(channels)ch"
+    }
+}
+
+@Test(
+    .enabled(if: FFmpegEncoder.locate() != nil, "ffmpeg is not installed"),
+    arguments: [([], nil), ([440], "audio aac 1ch"), ([440, 660], "audio aac 2ch")] as [([Int], String?)]
+)
+func encodesAudioToOneAACTrack(tones: [Int], audio: String?) async throws {
+    let ffmpeg = try #require(FFmpegEncoder.locate())
+    let directory = try temporaryDirectory()
+    let intermediate = directory.appendingPathComponent("clip.mov")
+    try generateClip(ffmpeg, to: intermediate, tones: tones)
+    let output = directory.appendingPathComponent("out.mp4")
+    try await FFmpegEncoder(ffmpegURL: ffmpeg).encode(
+        intermediate: intermediate, to: output, settings: RecordingSettings(), progress: { _ in }
+    )
+    // A mono microphone alone stays mono; mixed with stereo system audio it is stereo.
+    #expect(try streams(of: output, ffmpeg: ffmpeg) == ["video h264"] + (audio.map { [$0] } ?? []))
+}
+
+extension Array where Element: Equatable {
+    func containsSequence(_ sequence: [Element]) -> Bool {
+        guard sequence.count <= count else { return false }
+        return (0...(count - sequence.count)).contains { Array(self[$0..<($0 + sequence.count)]) == sequence }
+    }
 }
 
 final class Fractions: @unchecked Sendable {

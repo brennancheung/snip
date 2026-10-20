@@ -14,7 +14,8 @@ A small native macOS screen recorder for quick snippets, in place of OBS.
 ScreenCaptureKit records the chosen window or region to a high-quality intermediate `.mov` in a
 temporary folder (hardware encoded, so recording costs almost no CPU). On stop, ffmpeg re-encodes
 it with libx264 at the chosen CRF, `yuv420p` and `+faststart`, which makes screen recordings
-several times smaller than the hardware encode. Without ffmpeg (`brew install ffmpeg`) the
+several times smaller than the hardware encode. Microphone and system audio, when turned on in
+Settings or the menu, become one AAC track (mixed when both are on). Without ffmpeg (`brew install ffmpeg`) the
 intermediate is kept as the result.
 
 ## Build
@@ -25,4 +26,5 @@ swift test
 bin/build-app        # build/Snip.app, signed
 ```
 
-The first run asks for Screen Recording permission (System Settings › Privacy & Security).
+The first run asks for Screen Recording permission (System Settings › Privacy & Security), and
+turning the microphone on the first time asks for Microphone permission.
