@@ -20,6 +20,9 @@ owner's Mac (`swift build`, `swift test`, `bin/build-app`) and sends compiler er
   `AppController` (the state machine).
 - `Sources/Snip`: the app's `main.swift`. `Sources/snip-cli`: a command-line driver for capture
   and encode, no UI.
+- `Sources/snip-ui-preview`: draws Snip's own UI (selection bar, overlay, pill, countdown, Settings)
+  off-screen at interface sizes and writes PNGs: `swift run snip-ui-preview /tmp/snip-ui 100 200`.
+  The views come from `UIPreviews` in SnipUI.
 - `bin/build-app`: builds and signs `build/Snip.app`.
 
 Library first: capture and encode work from `snip-cli` before the UI depends on them.
@@ -28,6 +31,10 @@ Library first: capture and encode work from `snip-cli` before the UI depends on 
 
 - Swift 6 toolchain, Swift 5 language mode, macOS 15 minimum.
 - Stay in the files your task names. Other agents work in the other modules at the same time.
+- Every size Snip's UI sets (fonts, paddings, radii, icons, panels) goes through `UIScale`, the
+  Interface size setting: a macOS default size times the scale. Snip draws its own buttons,
+  segments, popups, switches and slider (`BezelButton`, SettingsControls.swift) because AppKit's
+  bezelled controls keep a fixed height per control size and clip larger text.
 - Tests (`swift-testing`) only for logic that can break quietly: naming, settings, ffmpeg
   arguments. No tests of how UI looks.
 - Recordings and mockup renders are never committed except the PNGs under `docs/mockups/`.
