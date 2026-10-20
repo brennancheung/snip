@@ -41,15 +41,16 @@ public struct FFmpegEncoder: RecordingEncoder {
     }
 
     /// The ffmpeg command line, without the executable. `audioStreams` is how many audio tracks the
-    /// intermediate has (system audio); `microphone` are the spans recorded while the mic was on.
-    /// No audio drops it; one system track alone is encoded to AAC; anything more is mixed into one
-    /// stereo AAC track, each microphone span placed at its offset.
+    /// intermediate has (system audio), muted over `systemAudioOff`; `microphone` are the spans
+    /// recorded while the mic was on. No audio drops it; one system track alone is encoded to AAC;
+    /// anything more is mixed into one stereo AAC track, each microphone span placed at its offset.
     public static func arguments(
         intermediate: URL,
         output: URL,
         settings: RecordingSettings,
         audioStreams: Int = 0,
-        microphone: [MicrophoneSpan] = []
+        microphone: [MicrophoneSpan] = [],
+        systemAudioOff: [MuteSpan] = []
     ) -> [String] {
         ["-hide_banner", "-y", "-i", intermediate.path]
         + microphone.flatMap { ["-i", $0.url.path] }
@@ -65,7 +66,7 @@ public struct FFmpegEncoder: RecordingEncoder {
             "-r", String(settings.fps),
             "-movflags", "+faststart",
         ]
-        + audioArguments(streams: max(audioStreams, 0), microphone: microphone)
+        + audioArguments(streams: max(audioStreams, 0), microphone: microphone, systemAudioOff: systemAudioOff)
         + [
             "-progress", "pipe:1",
             "-nostats",
@@ -73,15 +74,20 @@ public struct FFmpegEncoder: RecordingEncoder {
         ]
     }
 
-    private static func audioArguments(streams: Int, microphone: [MicrophoneSpan]) -> [String] {
+    private static func audioArguments(streams: Int, microphone: [MicrophoneSpan], systemAudioOff: [MuteSpan]) -> [String] {
         let aac = ["-c:a", "aac", "-b:a", "160k"]
+        // Off for the whole recording: leave the system tracks out.
+        let silent = systemAudioOff.contains { $0.start <= 0 && $0.end == nil }
+        let streams = silent ? 0 : streams
+        let mutes = silent ? [] : systemAudioOff
         if streams == 0 && microphone.isEmpty { return ["-an"] }
-        if streams == 1 && microphone.isEmpty { return aac }
+        if streams == 1 && microphone.isEmpty && mutes.isEmpty { return aac }
 
         // Every source to stereo first: amix otherwise takes the mono microphone's layout and folds
         // the system audio down to mono.
         let stereo = "aformat=channel_layouts=stereo"
-        var chains = (0..<streams).map { "[0:a:\($0)]\(stereo)" }
+        let muting = mutes.map(muteFilter).joined()
+        var chains = (0..<streams).map { "[0:a:\($0)]\(muting)\(stereo)" }
         for (index, span) in microphone.enumerated() {
             chains.append("[\(index + 1):a:0]\(placement(of: span))\(stereo)")
         }
@@ -97,6 +103,17 @@ public struct FFmpegEncoder: RecordingEncoder {
         return ["-filter_complex", graph, "-map", "0:v:0", "-map", "[a]"] + aac
     }
 
+    /// Silences system audio over `span`. The quotes keep the expression's commas inside the filter.
+    private static func muteFilter(_ span: MuteSpan) -> String {
+        let start = seconds(max(span.start, 0))
+        let window = span.end.map { "between(t,\(start),\(seconds($0)))" } ?? "gte(t,\(start))"
+        return "volume=enable='\(window)':volume=0,"
+    }
+
+    private static func seconds(_ value: Double) -> String {
+        String(format: "%.3f", value)
+    }
+
     /// Delays a span to its offset, or trims the part recorded before the first frame.
     private static func placement(of span: MicrophoneSpan) -> String {
         let milliseconds = Int((span.offset * 1000).rounded())
@@ -105,12 +122,10 @@ public struct FFmpegEncoder: RecordingEncoder {
         return ""
     }
 
-    /// Encodes `intermediate`, with the `microphone` spans mixed in, to `output`, writing to a hidden
-    /// temporary name in the output folder and moving it into place only when ffmpeg succeeds. The
-    /// intermediate and the spans are left for the caller.
+    /// Encodes `media` to `output`, writing to a hidden temporary name in the output folder and
+    /// moving it into place only when ffmpeg succeeds. The movie and the spans are left for the caller.
     public func encode(
-        intermediate: URL,
-        microphone: [MicrophoneSpan],
+        _ media: RecordedMedia,
         to output: URL,
         settings: RecordingSettings,
         progress: @escaping @Sendable (Double) -> Void
@@ -124,13 +139,15 @@ public struct FFmpegEncoder: RecordingEncoder {
 
         let run = FFmpegRun(
             ffmpeg: ffmpegURL,
-            input: intermediate,
+            input: media.movie,
             arguments: { probe in
                 // Spans are placed against the first frame; the file may start a little earlier.
-                let placed = microphone.map { MicrophoneSpan(url: $0.url, offset: $0.offset + probe.videoLead) }
+                let lead = probe.videoLead
+                let placed = media.microphone.map { MicrophoneSpan(url: $0.url, offset: $0.offset + lead) }
+                let muted = media.systemAudioOff.map { MuteSpan(start: $0.start + lead, end: $0.end.map { $0 + lead }) }
                 return Self.arguments(
-                    intermediate: intermediate, output: partial, settings: settings,
-                    audioStreams: probe.audioStreams, microphone: placed
+                    intermediate: media.movie, output: partial, settings: settings,
+                    audioStreams: probe.audioStreams, microphone: placed, systemAudioOff: muted
                 )
             }
         )

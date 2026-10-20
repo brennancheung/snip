@@ -13,15 +13,30 @@ public struct MicrophoneSpan: Sendable, Equatable {
     }
 }
 
-/// What a recording leaves behind: the movie (video, and system audio when it was on) and the
-/// microphone spans, each in the temporary folder until encoded.
+/// A stretch of the movie where system audio was turned off, in seconds on the movie's timeline.
+public struct MuteSpan: Sendable, Equatable {
+    public var start: Double
+    /// nil: still off when the recording stopped.
+    public var end: Double?
+
+    public init(start: Double, end: Double?) {
+        self.start = start
+        self.end = end
+    }
+}
+
+/// What a recording leaves behind: the movie (video and system audio) and the microphone spans,
+/// each in the temporary folder until encoded, and where system audio was off.
 public struct RecordedMedia: Sendable, Equatable {
     public var movie: URL
     public var microphone: [MicrophoneSpan]
+    /// System audio is always captured, so it can be turned on mid-recording; these stretches are muted.
+    public var systemAudioOff: [MuteSpan]
 
-    public init(movie: URL, microphone: [MicrophoneSpan] = []) {
+    public init(movie: URL, microphone: [MicrophoneSpan] = [], systemAudioOff: [MuteSpan] = []) {
         self.movie = movie
         self.microphone = microphone
+        self.systemAudioOff = systemAudioOff
     }
 
     /// Deletes the movie and the microphone spans.
@@ -39,6 +54,8 @@ public protocol ScreenRecorder: AnyObject {
     func start(target: CaptureTarget, settings: RecordingSettings, intermediateURL: URL) async throws
     /// Turns the microphone on (`deviceID` nil is the default input) or off while recording.
     func setMicrophone(_ on: Bool, deviceID: String?) async throws
+    /// Turns system audio on or off while recording (off stretches are muted when encoding).
+    func setSystemAudio(_ on: Bool)
     /// Stops and finalizes the files.
     func stop() async throws -> RecordedMedia
     /// Stops and deletes whatever was recorded.
@@ -47,10 +64,10 @@ public protocol ScreenRecorder: AnyObject {
 
 /// Turns the intermediate recording into the small final file. Implemented by `FFmpegEncoder`.
 public protocol RecordingEncoder: Sendable {
-    /// Mixes `microphone` in at its offsets. `progress` is called with 0...1 as encoding proceeds.
+    /// Encodes `media.movie`, muting system audio where it was off and mixing the microphone spans
+    /// in at their offsets. `progress` is called with 0...1 as encoding proceeds.
     func encode(
-        intermediate: URL,
-        microphone: [MicrophoneSpan],
+        _ media: RecordedMedia,
         to output: URL,
         settings: RecordingSettings,
         progress: @escaping @Sendable (Double) -> Void
@@ -58,14 +75,14 @@ public protocol RecordingEncoder: Sendable {
 }
 
 extension RecordingEncoder {
-    /// Encodes a recording without microphone spans.
+    /// Encodes a movie as it is, without microphone spans or muting.
     public func encode(
         intermediate: URL,
         to output: URL,
         settings: RecordingSettings,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        try await encode(intermediate: intermediate, microphone: [], to: output, settings: settings, progress: progress)
+        try await encode(RecordedMedia(movie: intermediate), to: output, settings: settings, progress: progress)
     }
 }
 
