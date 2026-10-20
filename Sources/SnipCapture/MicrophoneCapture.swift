@@ -51,10 +51,10 @@ final class MicrophoneCapture: NSObject, @unchecked Sendable {
     /// or nil (and no file) if nothing was recorded.
     func finish() async -> CMTime? {
         session.stopRunning()
-        let written: (AVAssetWriter, CMTime)? = queue.sync {
+        let written: (AVAssetWriter, CMTime)? = queue.sync { () -> (AVAssetWriter, CMTime)? in
             stopped = true
             input?.markAsFinished()
-            guard let writer, let firstSampleTime else { return nil }
+            guard let writer = self.writer, let firstSampleTime else { return nil }
             return (writer, firstSampleTime)
         }
         guard let written else {
