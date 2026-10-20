@@ -45,6 +45,16 @@ class BezelButton: NSButton {
         didSet { needsDisplay = true }
     }
 
+    // Drawn in draw(_:), never by the layer.
+    override var wantsUpdateLayer: Bool { false }
+
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func drawFocusRingMask() {
+        let radius = scale.metric(6)
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let radius = scale.metric(6)
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)

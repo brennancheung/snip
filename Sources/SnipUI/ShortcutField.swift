@@ -3,15 +3,16 @@ import SnipCore
 import SwiftUI
 
 /// Click, then press the new key combination. Escape or clicking elsewhere keeps the old one.
+/// Drawn like the Settings buttons, at the interface size.
 struct ShortcutField: NSViewRepresentable {
     var hotKey: HotKeySpec
-    var fontSize: CGFloat = NSFont.systemFontSize
+    var scale: UIScale
     /// True while waiting for keys, so the app can pause its own hotkey.
     var onRecordingChange: (Bool) -> Void
     var onChange: (HotKeySpec) -> Void
 
     func makeNSView(context: Context) -> ShortcutButton {
-        let button = ShortcutButton(frame: .zero)
+        let button = ShortcutButton(scale: scale)
         button.onRecordingChange = onRecordingChange
         button.onChange = onChange
         button.hotKey = hotKey
@@ -26,20 +27,23 @@ struct ShortcutField: NSViewRepresentable {
         update(button, context: context)
     }
 
-    /// An NSView doesn't pick up SwiftUI's control size or font, so pass them on.
+    /// An NSView doesn't pick up SwiftUI's font, so pass the size on.
     private func update(_ button: ShortcutButton, context: Context) {
-        button.controlSize = NSControl.ControlSize(context.environment.controlSize)
-        if button.titleFont.pointSize != fontSize { button.titleFont = .systemFont(ofSize: fontSize) }
+        if button.scale != scale {
+            button.scale = scale
+            button.titleFont = scale.font(13)
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: ShortcutButton, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
     }
 }
 
-final class ShortcutButton: NSButton {
+final class ShortcutButton: BezelButton {
     var onRecordingChange: ((Bool) -> Void)?
     var onChange: ((HotKeySpec) -> Void)?
     var hotKey = HotKeySpec(keyCode: 0, carbonModifiers: 0) {
-        didSet { refreshTitle() }
-    }
-    var titleFont = NSFont.systemFont(ofSize: NSFont.systemFontSize) {
         didSet { refreshTitle() }
     }
 
@@ -47,17 +51,16 @@ final class ShortcutButton: NSButton {
         didSet {
             guard isRecording != oldValue else { return }
             refreshTitle()
+            outlineColor = isRecording ? .controlAccentColor : nil
             onRecordingChange?(isRecording)
         }
     }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        bezelStyle = .push
-        setButtonType(.momentaryPushIn)
+    init(scale: UIScale) {
+        super.init(title: "", font: scale.font(13), scale: scale)
         target = self
         action = #selector(clicked)
-        widthAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
+        minimumWidth = 110
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -101,8 +104,6 @@ final class ShortcutButton: NSButton {
     }
 
     private func refreshTitle() {
-        let text = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
-        attributedTitle = .controlTitle(text, font: titleFont)
-        invalidateIntrinsicContentSize()
+        text = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
     }
 }

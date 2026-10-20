@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Snip", targets: ["Snip"]),
         .executable(name: "snip-cli", targets: ["snip-cli"]),
+        .executable(name: "snip-ui-preview", targets: ["snip-ui-preview"]),
     ],
     targets: [
         // Models, settings, output naming and the ffmpeg CRF encoder. No UI, no ScreenCaptureKit.
@@ -19,6 +20,8 @@ let package = Package(
         .executableTarget(name: "Snip", dependencies: ["SnipUI"]),
         // Command-line driver for the capture and encode libraries, no UI.
         .executableTarget(name: "snip-cli", dependencies: ["SnipCore", "SnipCapture"]),
+        // Draws Snip's own UI off-screen at interface sizes and saves PNGs, to check how it looks.
+        .executableTarget(name: "snip-ui-preview", dependencies: ["SnipUI"]),
         .testTarget(name: "SnipCoreTests", dependencies: ["SnipCore"]),
     ],
     swiftLanguageModes: [.v5]
