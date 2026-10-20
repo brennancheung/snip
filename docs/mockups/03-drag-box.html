@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>3 · Selecting: drag a box</title>
+<link rel="stylesheet" href="desktop.css">
+</head>
+<body>
+<div class="stage" id="desktop"></div>
+<div class="layer">
+  <div class="sel" id="sel"></div>
+  <div class="bar glass-dark" id="bar">
+    <span class="size num">1280 × 720</span>
+    <span class="btn ghost">Cancel <span class="key">esc</span></span>
+    <span class="btn rec">Record <span class="key">↩</span></span>
+  </div>
+</div>
+<script src="desktop.js"></script>
+<script src="overlay.js"></script>
+<script>
+  const a = GEO.area, sel = document.getElementById('sel');
+  place(sel, a);
+  dim(a);
+  handles(sel);
+  Object.assign(document.getElementById('bar').style, { left: a.x + a.w / 2 + 'px', top: a.y + a.h + 12 + 'px' });
+  cursor(CROSSHAIR, a.x + a.w - 11.5, a.y + a.h - 11.5);
+</script>
+</body></html>

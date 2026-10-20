@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>4 · Countdown</title>
+<link rel="stylesheet" href="desktop.css">
+<style>
+  .count {
+    position: absolute; width: 120px; height: 120px; border-radius: 50%; transform: translate(-50%, -50%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 64px; font-weight: 600; letter-spacing: -0.02em;
+  }
+</style>
+</head>
+<body>
+<div class="stage" id="desktop"></div>
+<div class="layer">
+  <div class="sel" id="sel"></div>
+  <div class="count glass-dark num" id="count">3</div>
+</div>
+<script src="desktop.js"></script>
+<script src="overlay.js"></script>
+<script>
+  const a = GEO.area;
+  place(document.getElementById('sel'), a);
+  dim(a);
+  Object.assign(document.getElementById('count').style, { left: a.x + a.w / 2 + 'px', top: a.y + a.h / 2 + 'px' });
+</script>
+</body></html>

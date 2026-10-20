@@ -1,0 +1,85 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>8 · Settings</title>
+<meta name="mockup-size" content="660×552">
+<link rel="stylesheet" href="desktop.css">
+<style>
+  html, body { width: 660px; height: 552px; }
+  .backdrop { position: absolute; inset: -40px; filter: blur(6px); }
+  .settings {
+    position: absolute; left: 60px; top: 50px; width: 540px; border-radius: 22px;
+    background: #ececee;
+  }
+  .settings .titlebar { height: 50px; display: flex; align-items: center; padding: 0 18px; position: relative; }
+  .settings .titlebar .title { position: absolute; left: 0; right: 0; text-align: center; font-weight: 600; color: rgba(0, 0, 0, 0.8); }
+  .settings .content { padding: 4px 20px 20px; }
+  .group { background: #fff; border-radius: 12px; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08); margin-bottom: 14px; }
+  .group:last-child { margin-bottom: 0; }
+  .row { min-height: 42px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; position: relative; }
+  .row + .row::before { content: ""; position: absolute; top: 0; left: 14px; right: 14px; height: 0.5px; background: rgba(0, 0, 0, 0.11); }
+  .row.tall { min-height: 56px; }
+  .row .sub { font-size: 11px; color: var(--secondary); margin-top: 2px; }
+  .ctl { display: flex; align-items: center; gap: 10px; color: var(--secondary); font-size: 12px; }
+
+  .slider { width: 190px; height: 22px; position: relative; display: flex; align-items: center; }
+  .slider .track { width: 100%; height: 4px; border-radius: 2px; background: rgba(0, 0, 0, 0.12); position: relative; }
+  .slider .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--accent); }
+  .slider .knob {
+    position: absolute; top: 50%; width: 26px; height: 16px; margin: -8px 0 0 -13px; border-radius: 8px;
+    background: #fff; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.14), 0 2px 5px rgba(0, 0, 0, 0.18);
+  }
+  .slider .ticks { position: absolute; left: 0; right: 0; top: 19px; display: flex; justify-content: space-between; padding: 0 1px; }
+  .slider .ticks i { width: 1px; height: 4px; background: rgba(0, 0, 0, 0.18); display: block; }
+
+  .seg { display: flex; padding: 2px; border-radius: 9px; background: rgba(0, 0, 0, 0.065); }
+  .seg span { min-width: 54px; height: 24px; padding: 0 12px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: var(--label); font-size: 12.5px; font-weight: 500; }
+  .seg span.on { background: #fff; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.14); }
+
+  .switch { width: 42px; height: 24px; border-radius: 12px; background: var(--accent); position: relative; }
+  .switch::after { content: ""; position: absolute; right: 2px; top: 2px; width: 25px; height: 20px; border-radius: 10px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); }
+
+  .push { height: 24px; padding: 0 12px; border-radius: 7px; background: #fff; display: flex; align-items: center; color: var(--label); font-size: 12.5px; font-weight: 500; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 1px 2px rgba(0, 0, 0, 0.1); }
+  .folder { display: flex; align-items: center; gap: 6px; color: var(--label); font-size: 13px; }
+
+  .recorder {
+    height: 26px; min-width: 112px; padding: 0 6px 0 12px; border-radius: 7px; background: #fff;
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.06);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    color: var(--label); font-size: 13px; letter-spacing: 0.08em;
+  }
+  .recorder .x { width: 15px; height: 15px; border-radius: 50%; background: rgba(0, 0, 0, 0.22); display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+<div class="backdrop"><div class="wallpaper"></div></div>
+<div class="settings win">
+  <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="title">Snip Settings</div></div>
+  <div class="content">
+    <div class="group">
+      <div class="row tall">
+        <div><div>Quality</div><div class="sub num">CRF 23</div></div>
+        <div class="ctl">Sharper
+          <div class="slider"><div class="track"><div class="fill" style="width:35.7%"></div></div><div class="knob" style="left:35.7%"></div>
+            <div class="ticks"></div></div>
+          Smaller</div>
+      </div>
+      <div class="row"><div>Frame rate</div><div class="seg"><span class="on">30</span><span>60</span></div></div>
+      <div class="row"><div>Resolution</div><div class="seg"><span class="on">Full Retina</span><span>Half</span></div></div>
+      <div class="row"><div>Countdown</div><div class="seg"><span>Off</span><span class="on">3 s</span><span>5 s</span></div></div>
+      <div class="row"><div>Show cursor</div><div class="switch"></div></div>
+    </div>
+    <div class="group">
+      <div class="row"><div>Save to</div><div class="ctl">
+        <span class="folder"><svg width="17" height="14" viewBox="0 0 17 14"><path d="M1 2.6C1 1.7 1.7 1 2.6 1h3.6l1.6 1.8h6.6c.9 0 1.6.7 1.6 1.6v7c0 .9-.7 1.6-1.6 1.6H2.6c-.9 0-1.6-.7-1.6-1.6z" fill="#4fa8ff"/><path d="M1 4.6h15v6.8c0 .9-.7 1.6-1.6 1.6H2.6c-.9 0-1.6-.7-1.6-1.6z" fill="#76bcff"/><path d="M8.5 6v4.4M6.6 8.6l1.9 1.9 1.9-1.9" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Downloads</span>
+        <span class="push">Change…</span></div></div>
+      <div class="row"><div>Copy to clipboard when done</div><div class="switch"></div></div>
+    </div>
+    <div class="group">
+      <div class="row"><div>Shortcut</div><div class="recorder"><span>⇧⌘6</span><span class="x"><svg width="7" height="7" viewBox="0 0 7 7" stroke="#fff" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l5 5M6 1L1 6"/></svg></span></div></div>
+    </div>
+  </div>
+</div>
+<script>
+  // Fill in the slider's 15 ticks, one per CRF step from 18 to 32.
+  document.querySelector('.ticks').innerHTML = '<i></i>'.repeat(15);
+</script>
+</body></html>
