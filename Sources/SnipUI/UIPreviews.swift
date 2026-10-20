@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SnipCore
 import SwiftUI
 
@@ -12,9 +13,11 @@ public enum UIPreviews {
     }
 
     /// Renders every preview at each of `scales` (1 = 100%) into `directory`, one PNG each named
-    /// like "selection-bar@200.png", and returns their URLs.
-    public static func write(scales: [Double], to directory: URL) throws -> [URL] {
+    /// like "selection-bar@200.png", and returns their URLs. `video` is the recording shown in
+    /// "done-panel"; without one, a short sample clip is made.
+    public static func write(scales: [Double], to directory: URL, video: URL? = nil) throws -> [URL] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        sampleVideo = try video ?? makeSampleVideo()
         var written: [URL] = []
         for factor in scales {
             let ui = UIScale(CGFloat(factor))
@@ -33,8 +36,11 @@ public enum UIPreviews {
 
     private static let names = [
         "selection-bar", "overlay-hover", "overlay-drawing", "overlay-selected",
-        "pill", "pill-compressing", "countdown", "settings",
+        "pill", "pill-compressing", "countdown", "settings", "done-panel",
     ]
+
+    /// The recording "done-panel" shows.
+    private static var sampleVideo: URL?
 
     /// The pills and countdowns being drawn, which own the panels their views are in.
     private static var keptAlive: [AnyObject] = []
@@ -50,6 +56,7 @@ public enum UIPreviews {
         case "pill": return (pill(ui, compressing: false), NSColor(white: 0.2, alpha: 1))
         case "pill-compressing": return (pill(ui, compressing: true), NSColor(white: 0.2, alpha: 1))
         case "countdown": return (countdown(ui), desktop)
+        case "done-panel": return (donePanel(ui), NSColor(white: 0.2, alpha: 1))
         default: return (settings(ui), .windowBackgroundColor)
         }
     }
@@ -117,6 +124,98 @@ public enum UIPreviews {
         return hosting
     }
 
+    /// The after-recording panel for the sample video, its first frame standing in for the player
+    /// (an off-screen render doesn't draw video or AVKit's controls).
+    static func donePanel(_ ui: UIScale) -> NSView {
+        guard let video = sampleVideo else { return NSView() }
+        let size = wait { await DonePanelView.videoSize(of: video) } ?? CGSize(width: 16, height: 9)
+        let view = DonePanelView(file: video, videoSize: size, scale: ui)
+        if let still = wait({ await DonePanelView.firstFrame(of: video) }) ?? nil {
+            view.showStill(still)
+        }
+        view.setFrameSize(view.fittingSize)
+        return view
+    }
+
+    // MARK: The sample video
+
+    /// "Snip 2026-10-19 at 14.03.22.mp4" in a temporary folder: two seconds of 1280 × 720 H.264,
+    /// a light box moving across a blue background.
+    static func makeSampleVideo() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("snip-ui-preview", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("Snip 2026-10-19 at 14.03.22.mp4")
+        try? FileManager.default.removeItem(at: url)
+
+        let width = 1280, height = 720, frames = 60
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
+        ])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+        ])
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw RenderError(description: "can't write a sample video: \(writer.error?.localizedDescription ?? "unknown error")")
+        }
+        writer.startSession(atSourceTime: .zero)
+        for index in 0..<frames {
+            while !input.isReadyForMoreMediaData {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            }
+            var buffer: CVPixelBuffer?
+            if let pool = adaptor.pixelBufferPool {
+                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+            }
+            guard let buffer else { throw RenderError(description: "can't make a frame for the sample video") }
+            drawSampleFrame(CGFloat(index) / CGFloat(frames), into: buffer)
+            adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(index), timescale: 30))
+        }
+        input.markAsFinished()
+        _ = wait { await writer.finishWriting() }
+        guard writer.status == .completed else {
+            throw RenderError(description: "can't finish the sample video: \(writer.error?.localizedDescription ?? "unknown error")")
+        }
+        return url
+    }
+
+    /// One frame, `progress` (0–1) of the way through.
+    private static func drawSampleFrame(_ progress: CGFloat, into buffer: CVPixelBuffer) {
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        guard
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            )
+        else { return }
+        context.setFillColor(NSColor(hue: 0.6 + 0.08 * progress, saturation: 0.5, brightness: 0.45, alpha: 1).cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(NSColor(white: 0.95, alpha: 1).cgColor)
+        let box = CGRect(x: 120 + progress * 640, y: 200, width: 400, height: 260)
+        context.addPath(CGPath(roundedRect: box, cornerWidth: 24, cornerHeight: 24, transform: nil))
+        context.fillPath()
+    }
+
+    /// Runs `work` on the main actor and spins the run loop until it returns, for up to 10 seconds.
+    private static func wait<T>(_ work: @escaping @MainActor () async -> T) -> T? {
+        let box = WaitBox<T>()
+        Task { @MainActor in box.value = await work() }
+        let deadline = Date().addingTimeInterval(10)
+        while box.value == nil, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        return box.value
+    }
+
     // MARK: Rendering
 
     /// Draws `view` over `background`, one pixel per point.
@@ -158,4 +257,9 @@ public enum UIPreviews {
         else { throw RenderError(description: "can't encode \(type(of: view)) as PNG") }
         return data
     }
+}
+
+/// What `UIPreviews.wait` waits for.
+private final class WaitBox<T> {
+    var value: T?
 }

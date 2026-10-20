@@ -20,8 +20,9 @@ owner's Mac (`swift build`, `swift test`, `bin/build-app`) and sends compiler er
   `AppController` (the state machine).
 - `Sources/Snip`: the app's `main.swift`. `Sources/snip-cli`: a command-line driver for capture
   and encode, no UI.
-- `Sources/snip-ui-preview`: draws Snip's own UI (selection bar, overlay, pill, countdown, Settings)
-  off-screen at interface sizes and writes PNGs: `swift run snip-ui-preview /tmp/snip-ui 100 200`.
+- `Sources/snip-ui-preview`: draws Snip's own UI (selection bar, overlay, pill, countdown, Settings,
+  after-recording panel) off-screen at interface sizes and writes PNGs:
+  `swift run snip-ui-preview /tmp/snip-ui 100 200 [recording.mp4]`.
   The views come from `UIPreviews` in SnipUI.
 - `bin/build-app`: builds and signs `build/Snip.app`.
 
