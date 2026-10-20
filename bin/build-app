@@ -1,0 +1,18 @@
+#!/bin/sh
+# Builds Snip.app into build/ and signs it.
+# Screen Recording permission is tied to the signature: with ad-hoc signing macOS asks again
+# after every rebuild. Set SNIP_SIGN_IDENTITY to a stable code-signing identity to avoid that.
+set -eu
+cd "$(dirname "$0")/.."
+
+swift build -c release --product Snip
+bin_dir=$(swift build -c release --show-bin-path)
+
+app=build/Snip.app
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp "$bin_dir/Snip" "$app/Contents/MacOS/Snip"
+cp Resources/Info.plist "$app/Contents/Info.plist"
+
+codesign --force --sign "${SNIP_SIGN_IDENTITY:--}" "$app"
+echo "$(pwd)/$app"
