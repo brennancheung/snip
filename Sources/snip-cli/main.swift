@@ -14,7 +14,8 @@ enum Help {
       snip-cli displays
       snip-cli record (--window <id> | --rect x,y,w,h [--display <id>] | --display <id>)
                       [--seconds 5] [--fps 30] [--crf 23] [--scale full|half] [--no-cursor]
-                      [--mic] [--mic-toggles <s,s,...>] [--no-system-audio] [--keep] [--out <path>]
+                      [--mic] [--mic-toggles <s,s,...>] [--no-system-audio] [--system-audio-toggles <s,s,...>]
+                      [--keep] [--out <path>]
 
       windows   lists recordable windows, front to back: id, app, title, size in points.
       displays  lists displays: id, size in points, pixel scale.
@@ -26,7 +27,8 @@ enum Help {
                 unless --display is given).
                 System audio is recorded unless --no-system-audio. --mic records the default
                 microphone; --mic-toggles flips it on or off at those seconds (e.g. 2,4: on at
-                2 s, off at 4 s without --mic). Everything is mixed into one AAC track.
+                2 s, off at 4 s without --mic); --system-audio-toggles does the same for system
+                audio. Everything is mixed into one AAC track.
                 --keep leaves the intermediate movie and microphone files in place.
     """
 }
@@ -121,6 +123,8 @@ struct RecordOptions {
     var out: String?
     /// Seconds after the start at which the microphone flips.
     var micToggles: [Double] = []
+    /// Seconds after the start at which system audio flips.
+    var systemAudioToggles: [Double] = []
     var keep = false
 
     var target: CaptureTarget {
@@ -171,11 +175,11 @@ func parseRecordOptions(_ arguments: [String]) -> RecordOptions {
         case "--mic": options.settings.recordMicrophone = true
         case "--system-audio": options.settings.recordSystemAudio = true
         case "--no-system-audio": options.settings.recordSystemAudio = false
-        case "--mic-toggles":
+        case "--mic-toggles", "--system-audio-toggles":
             let text = value(flag)
             let times = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-            guard !times.isEmpty, times.allSatisfy({ $0 > 0 }) else { fail("--mic-toggles wants seconds, e.g. 2,4") }
-            options.micToggles = times.sorted()
+            guard !times.isEmpty, times.allSatisfy({ $0 > 0 }) else { fail("\(flag) wants seconds, e.g. 2,4") }
+            if flag == "--mic-toggles" { options.micToggles = times.sorted() } else { options.systemAudioToggles = times.sorted() }
         case "--keep": options.keep = true
         case "--out": options.out = value(flag)
         case "-h", "--help": print(Help.usage); exit(0)
@@ -273,6 +277,14 @@ func record(_ arguments: [String]) async {
         }
     }
 
+    for (index, seconds) in options.systemAudioToggles.enumerated() {
+        let on = settings.recordSystemAudio != index.isMultiple(of: 2)
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
+            recorder.setSystemAudio(on)
+            printError("System audio \(on ? "on" : "off") at \(seconds)s")
+        }
+    }
+
     let reason = await stop.wait()
     if reason != "time" { printError("Stopping: \(reason)") }
     interrupt.cancel()
@@ -287,6 +299,10 @@ func record(_ arguments: [String]) async {
     printError("Intermediate: \(media.movie.path) (\(formatBytes(media.movie)))")
     for span in media.microphone {
         printError("Microphone: \(span.url.path) at \(String(format: "%.3f", span.offset))s (\(formatBytes(span.url)))")
+    }
+    for span in media.systemAudioOff {
+        let end = span.end.map { String(format: "%.3f", $0) + "s" } ?? "the end"
+        printError("System audio off: \(String(format: "%.3f", span.start))s to \(end)")
     }
     await compress(media, out: options.out, settings: settings, keep: options.keep)
 }
@@ -311,9 +327,7 @@ func compress(_ media: RecordedMedia, out: String?, settings: RecordingSettings,
 
     let started = Date()
     do {
-        try await FFmpegEncoder().encode(
-            intermediate: intermediate, microphone: media.microphone, to: output, settings: settings
-        ) { progress in
+        try await FFmpegEncoder().encode(media, to: output, settings: settings) { progress in
             FileHandle.standardError.write(Data(String(format: "\rCompressing… %3d%%", Int(progress * 100)).utf8))
         }
         let seconds = String(format: "%.1f", Date().timeIntervalSince(started))
@@ -323,6 +337,10 @@ func compress(_ media: RecordedMedia, out: String?, settings: RecordingSettings,
     } catch EncodeError.ffmpegMissing {
         printError("ffmpeg wasn't found (brew install ffmpeg); keeping the uncompressed recording.")
         do {
+            if !media.systemAudioOff.isEmpty {
+                printError("System audio was off for part of it, so the kept movie has no audio.")
+                try await MovieAudio.removeAudio(from: intermediate)
+            }
             let kept = try FFmpegEncoder.fallbackCopy(intermediate: intermediate, to: output)
             printError("Saved: \(formatBytes(kept))")
             print(kept.path)

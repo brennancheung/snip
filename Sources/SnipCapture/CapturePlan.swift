@@ -79,15 +79,15 @@ struct CapturePlan {
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         // Displays are usually P3; sRGB is what players and Slack assume, and what ffmpeg tags.
         configuration.colorSpaceName = CGColorSpace.sRGB
-        configuration.capturesAudio = settings.recordSystemAudio
-        if settings.recordSystemAudio {
-            // Only in Snip.app. From a terminal (snip-cli) the terminal counts as this process, so it
-            // would also drop the audio of everything started there (afplay, say). Snip's own sounds
-            // are left out by the display filter anyway, and a window recording only hears its app.
-            configuration.excludesCurrentProcessAudio = Bundle.main.bundleURL.pathExtension == "app"
-            configuration.sampleRate = 48_000
-            configuration.channelCount = 2
-        }
+        // Always captured, so it can be turned on mid-recording; where it is off, the encoder mutes it
+        // (SCKRecorder notes those stretches). Changing the configuration mid-recording would end the file.
+        configuration.capturesAudio = true
+        // Only in Snip.app. From a terminal (snip-cli) the terminal counts as this process, so it
+        // would also drop the audio of everything started there (afplay, say). Snip's own sounds
+        // are left out by the display filter anyway, and a window recording only hears its app.
+        configuration.excludesCurrentProcessAudio = Bundle.main.bundleURL.pathExtension == "app"
+        configuration.sampleRate = 48_000
+        configuration.channelCount = 2
         // The microphone is recorded by MicrophoneSpans instead, so it can go on and off mid-recording.
         configuration.captureMicrophone = false
         return configuration

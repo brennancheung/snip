@@ -155,7 +155,7 @@ public final class AppController: NSObject, NSApplicationDelegate {
         settingsChanged()
 
         let border = RecordingBorder(target: target, area: area)
-        let pill = RecordingPill(systemAudio: settings.recordSystemAudio)
+        let pill = RecordingPill()
         pill.onStop = { [weak self] in self?.stop() }
         pill.onDiscard = { [weak self] in self?.discard() }
         border.onAreaChange = { [weak pill] area in pill?.follow(area, target: target) }
@@ -169,10 +169,12 @@ public final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// While recording, the microphone follows its setting: the pill's icon, the menu or Settings.
+    /// While recording, the microphone and system audio follow their settings: the pill's icons,
+    /// the menu or Settings.
     @objc private func settingsChanged() {
         guard case .recording = state, let recorder else { return }
         let settings = SettingsStore.shared.settings
+        recorder.setSystemAudio(settings.recordSystemAudio)
         guard settings.recordMicrophone != microphoneOn else { return }
         let on = settings.recordMicrophone
         microphoneOn = on
@@ -224,16 +226,15 @@ public final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// Encodes to the output folder, creating it if it is missing. Without ffmpeg, or if it
-    /// fails, keeps the uncompressed recording (without the microphone) instead and returns a note saying so.
+    /// fails, keeps the uncompressed recording (without the microphone, and without system audio if
+    /// it was off for any of it) instead and returns a note saying so.
     private func encode(_ media: RecordedMedia, startedAt: Date) async throws -> (URL, String?) {
         let intermediate = media.movie
         let settings = SettingsStore.shared.settings
         let output = OutputNaming.outputURL(in: try settings.createOutputDirectory(), date: startedAt, ext: "mp4")
         let note: String
         do {
-            try await FFmpegEncoder().encode(
-                intermediate: intermediate, microphone: media.microphone, to: output, settings: settings
-            ) { [weak self] progress in
+            try await FFmpegEncoder().encode(media, to: output, settings: settings) { [weak self] progress in
                 Task { @MainActor in self?.encodingProgress(progress) }
             }
             media.remove()
@@ -242,6 +243,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
             note = "Not compressed: ffmpeg not found (brew install ffmpeg)."
         } catch {
             note = "Not compressed: ffmpeg failed."
+        }
+        if !media.systemAudioOff.isEmpty {
+            try await MovieAudio.removeAudio(from: intermediate)
         }
         // Moves the intermediate into the output folder as a .mov.
         let fallback = try FFmpegEncoder.fallbackCopy(intermediate: intermediate, to: output)

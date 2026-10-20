@@ -39,8 +39,7 @@ final class RecordingPill: NSObject {
     private let progressBar = NSProgressIndicator()
     private var userMoved = false
 
-    /// `systemAudio`: whether system audio is being recorded (it can't change mid-recording).
-    init(systemAudio: Bool) {
+    override init() {
         super.init()
         panel.configureAsSnipOverlay(level: .statusBar)
         panel.hasShadow = true
@@ -62,7 +61,7 @@ final class RecordingPill: NSObject {
         discard.toolTip = "Discard"
         discard.contentTintColor = .secondaryLabelColor
 
-        let audio = AudioToggles(recordingSystemAudio: systemAudio)
+        let audio = AudioToggles()
 
         recordingRow.setViews([dot, timeLabel, audio, stop, discard], in: .leading)
         recordingRow.spacing = 8
