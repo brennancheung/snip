@@ -1,0 +1,169 @@
+import AppKit
+import ServiceManagement
+import SnipCore
+import SwiftUI
+
+/// The Settings window: one pane, saved through SettingsStore as each control changes.
+@MainActor
+final class SettingsWindowController {
+    private let model: SettingsModel
+    private var window: NSWindow?
+
+    /// `applyHotKey` registers the new shortcut and returns false if it can't be used.
+    /// `pauseHotKey` is called with true while the shortcut field waits for keys.
+    init(applyHotKey: @escaping (HotKeySpec) -> Bool, pauseHotKey: @escaping (Bool) -> Void) {
+        model = SettingsModel(applyHotKey: applyHotKey, pauseHotKey: pauseHotKey)
+    }
+
+    func show() {
+        model.reload()
+        if window == nil {
+            let hosting = NSHostingController(rootView: SettingsView(model: model))
+            hosting.sizingOptions = .preferredContentSize
+            let window = NSWindow(contentViewController: hosting)
+            window.title = "Snip Settings"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            self.window = window
+        }
+        NSApp.activate()
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+@MainActor
+final class SettingsModel: ObservableObject {
+    @Published var settings: RecordingSettings {
+        didSet { if settings != oldValue { SettingsStore.shared.settings = settings } }
+    }
+    @Published private(set) var hotKey: HotKeySpec
+    @Published var launchAtLogin: Bool
+
+    private let applyHotKey: (HotKeySpec) -> Bool
+    let pauseHotKey: (Bool) -> Void
+
+    init(applyHotKey: @escaping (HotKeySpec) -> Bool, pauseHotKey: @escaping (Bool) -> Void) {
+        self.applyHotKey = applyHotKey
+        self.pauseHotKey = pauseHotKey
+        settings = SettingsStore.shared.settings
+        hotKey = SettingsStore.shared.hotKey
+        launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    func reload() {
+        settings = SettingsStore.shared.settings
+        hotKey = SettingsStore.shared.hotKey
+        launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    func setHotKey(_ spec: HotKeySpec) {
+        guard applyHotKey(spec) else {
+            NSSound.beep()
+            return
+        }
+        hotKey = spec
+        SettingsStore.shared.hotKey = spec
+    }
+
+    func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+        } catch {
+            NSSound.beep()
+        }
+        launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    var folderName: String {
+        FileManager.default.displayName(atPath: settings.resolvedOutputDirectory.path)
+    }
+
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = settings.resolvedOutputDirectory
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settings.outputDirectory = url
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        Form {
+            Slider(value: crf, in: 18...32, step: 1) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Quality")
+                    Text("CRF \(model.settings.crf)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            } minimumValueLabel: {
+                Text("Sharper")
+            } maximumValueLabel: {
+                Text("Smaller")
+            }
+
+            Picker("Frame rate", selection: $model.settings.fps) {
+                Text("30").tag(30)
+                Text("60").tag(60)
+            }
+            .pickerStyle(.segmented)
+
+            Picker("Resolution", selection: $model.settings.scale) {
+                Text("Full").tag(RecordingSettings.Scale.full)
+                Text("Half").tag(RecordingSettings.Scale.half)
+            }
+            .pickerStyle(.segmented)
+
+            Toggle("Show cursor", isOn: $model.settings.showCursor)
+
+            Picker("Countdown", selection: $model.settings.countdownSeconds) {
+                Text("Off").tag(0)
+                Text("3 s").tag(3)
+                Text("5 s").tag(5)
+            }
+            .pickerStyle(.segmented)
+
+            LabeledContent("Save to") {
+                HStack {
+                    Text(model.folderName)
+                    Button("Change…") { model.chooseFolder() }
+                }
+            }
+
+            Toggle("Copy to clipboard when done", isOn: $model.settings.copyToClipboard)
+
+            LabeledContent("Shortcut") {
+                ShortcutField(
+                    hotKey: model.hotKey,
+                    onRecordingChange: { model.pauseHotKey($0) },
+                    onChange: { model.setHotKey($0) }
+                )
+                .fixedSize()
+            }
+
+            Toggle("Launch at login", isOn: Binding(
+                get: { model.launchAtLogin },
+                set: { model.setLaunchAtLogin($0) }
+            ))
+        }
+        .formStyle(.grouped)
+        .frame(width: 460)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var crf: Binding<Double> {
+        Binding(
+            get: { Double(model.settings.crf) },
+            set: { model.settings.crf = Int($0.rounded()) }
+        )
+    }
+}
