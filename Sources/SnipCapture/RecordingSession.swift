@@ -12,10 +12,7 @@ final class RecordingSession: NSObject, @unchecked Sendable {
 
     private var stream: SCStream?
     private var recordingOutput: SCRecordingOutput?
-    /// The stream outputs added besides the recording output, removed again in `release()`.
-    private var outputTypes: [SCStreamOutputType] = []
     private let frameQueue = DispatchQueue(label: "snip.capture.frames", qos: .userInitiated)
-    private let audioQueue = DispatchQueue(label: "snip.capture.audio", qos: .userInitiated)
 
     private let lock = NSLock()
     /// How the recording output ended: finished, or failed with an error.
@@ -40,22 +37,16 @@ final class RecordingSession: NSObject, @unchecked Sendable {
         let recordingOutput = SCRecordingOutput(configuration: outputConfiguration, delegate: self)
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        // The samples themselves are dropped; the recording output writes them. An output per type
-        // stops ScreenCaptureKit from logging "stream output NOT found" for every sample.
-        var outputs: [(SCStreamOutputType, DispatchQueue)] = [(.screen, frameQueue)]
-        if configuration.capturesAudio { outputs.append((.audio, audioQueue)) }
-        if configuration.captureMicrophone { outputs.append((.microphone, audioQueue)) }
         do {
-            for (type, queue) in outputs {
-                try stream.addStreamOutput(self, type: type, sampleHandlerQueue: queue)
-            }
+            // The frames themselves are dropped; a screen output stops ScreenCaptureKit from logging
+            // "stream output NOT found" for every frame.
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: frameQueue)
             try stream.addRecordingOutput(recordingOutput)
         } catch {
             throw SnipCaptureError.from(error)
         }
         self.stream = stream
         self.recordingOutput = recordingOutput
-        self.outputTypes = outputs.map { $0.0 }
     }
 
     func start() async throws {
@@ -98,12 +89,10 @@ final class RecordingSession: NSObject, @unchecked Sendable {
     }
 
     /// Drops the stream and recording output, only once the file is finished: releasing the output
-    /// earlier could cut its finalization short. Removing the stream outputs breaks the stream → self cycle.
+    /// earlier could cut its finalization short. Removing the screen output breaks the stream → self cycle.
     private func release() {
         if let stream {
-            for type in outputTypes {
-                try? stream.removeStreamOutput(self, type: type)
-            }
+            try? stream.removeStreamOutput(self, type: .screen)
         }
         stream = nil
         recordingOutput = nil
