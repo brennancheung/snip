@@ -28,3 +28,23 @@ public struct RecordingSettings: Sendable, Codable, Equatable {
         outputDirectory ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
     }
 }
+
+extension RecordingSettings {
+    /// Decodes saved settings, using the default for any key that is missing or unreadable,
+    /// so settings saved by an older build still load after a field is added.
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+        }
+        fps = value(.fps, fps)
+        crf = value(.crf, crf)
+        preset = value(.preset, preset)
+        scale = value(.scale, scale)
+        showCursor = value(.showCursor, showCursor)
+        countdownSeconds = value(.countdownSeconds, countdownSeconds)
+        copyToClipboard = value(.copyToClipboard, copyToClipboard)
+        outputDirectory = value(.outputDirectory, outputDirectory)
+    }
+}

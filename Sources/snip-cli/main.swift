@@ -16,8 +16,10 @@ enum Help {
 
       windows   lists recordable windows, front to back: id, app, title, size in points.
       displays  lists displays: id, size in points, pixel scale.
-      record    records for --seconds (0 means until Ctrl-C; Ctrl-C always stops early)
-                and prints the intermediate .mov path.
+      record    records for --seconds (0 means until Ctrl-C; Ctrl-C always stops early),
+                compresses with ffmpeg (x264 at --crf) and prints the final path. --out is a
+                file or a folder; the default is "Snip <date>.mp4" in ~/Downloads. Without
+                ffmpeg the uncompressed .mov is kept instead.
                 --rect is in points, top-left origin, relative to the display (the main display
                 unless --display is given).
     """
@@ -205,9 +207,7 @@ func record(_ arguments: [String]) async {
     let options = parseRecordOptions(arguments)
     let target = options.target
     let settings = options.settings
-    let intermediate = FileManager.default.temporaryDirectory
-        .appendingPathComponent("snip-\(UUID().uuidString)")
-        .appendingPathExtension("mov")
+    let intermediate = OutputNaming.intermediateURL()
 
     let recorder = SCKRecorder()
     let stop = StopSignal()
@@ -242,16 +242,45 @@ func record(_ arguments: [String]) async {
     } catch {
         report(error)
     }
-    printError("Intermediate: \(formatBytes(url))")
-    print(url.path)
+    printError("Intermediate: \(url.path) (\(formatBytes(url)))")
+    await compress(url, out: options.out, settings: settings)
+}
 
-    // TODO(#2217): FFmpegEncoder and OutputNaming aren't in SnipCore yet. Once they land, encode here:
-    //   let output = options.out.map { URL(fileURLWithPath: $0) } ?? <OutputNaming URL in settings.resolvedOutputDirectory>
-    //   try await FFmpegEncoder().encode(intermediate: url, to: output, settings: settings) { progress in ... }
-    //   print(output.path) and its size (formatBytes(output)).
-    // --crf already feeds settings.crf.
-    if options.out != nil {
-        printError("Note: encoding isn't wired up yet, so --out is ignored; the intermediate above is the result.")
+/// Encodes the intermediate to `--out` (a file, or a folder to name it in), or to a new
+/// "Snip <date>.mp4" in the output folder. Prints the final path on stdout.
+func compress(_ intermediate: URL, out: String?, settings: RecordingSettings) async {
+    let output: URL
+    if let out {
+        var isDirectory: ObjCBool = false
+        let url = URL(fileURLWithPath: (out as NSString).expandingTildeInPath)
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        output = exists && isDirectory.boolValue ? OutputNaming.outputURL(in: url) : url
+    } else {
+        output = OutputNaming.outputURL(in: settings.resolvedOutputDirectory)
+    }
+
+    let started = Date()
+    do {
+        try await FFmpegEncoder().encode(intermediate: intermediate, to: output, settings: settings) { progress in
+            FileHandle.standardError.write(Data(String(format: "\rCompressing… %3d%%", Int(progress * 100)).utf8))
+        }
+        let seconds = String(format: "%.1f", Date().timeIntervalSince(started))
+        printError("\rCompressed in \(seconds)s: \(formatBytes(output))")
+        try? FileManager.default.removeItem(at: intermediate)
+        print(output.path)
+    } catch EncodeError.ffmpegMissing {
+        printError("ffmpeg wasn't found (brew install ffmpeg); keeping the uncompressed recording.")
+        do {
+            let kept = try FFmpegEncoder.fallbackCopy(intermediate: intermediate, to: output)
+            printError("Saved: \(formatBytes(kept))")
+            print(kept.path)
+        } catch {
+            fail("error: couldn't move \(intermediate.path) to \(output.path): \(error.localizedDescription)")
+        }
+    } catch let EncodeError.ffmpegFailed(status, log) {
+        fail("\nffmpeg failed (exit \(status)):\n\(log)\nThe intermediate is kept at \(intermediate.path)")
+    } catch {
+        fail("\nerror: \(error.localizedDescription)\nThe intermediate is kept at \(intermediate.path)")
     }
 }
 
