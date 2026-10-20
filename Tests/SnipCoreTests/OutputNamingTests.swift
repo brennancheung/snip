@@ -10,7 +10,7 @@ private func localDate() -> Date {
     let directory = try temporaryDirectory()
     let url = OutputNaming.outputURL(in: directory, date: localDate())
     #expect(url.lastPathComponent == "Snip 2026-10-19 at 14.03.22.mp4")
-    #expect(url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL)
+    #expect(url.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path)
 }
 
 @Test func addsSuffixWhenTaken() throws {

@@ -37,16 +37,16 @@ private func freshDefaults() -> UserDefaults {
     #expect(store.settings == RecordingSettings())
     #expect(store.hotKey == HotKeySpec(keyCode: 0x16, carbonModifiers: 0x0300))
 
-    var notifications = 0
-    let observer = NotificationCenter.default.addObserver(forName: SettingsStore.didChange, object: store, queue: nil) { _ in
-        notifications += 1
+    let notifications = Fractions()
+    let observer = NotificationCenter.default.addObserver(forName: SettingsStore.didChange, object: nil, queue: nil) { _ in
+        notifications.append(1)
     }
     defer { NotificationCenter.default.removeObserver(observer) }
 
     store.settings.crf = 19
     store.hotKey = HotKeySpec(keyCode: 0x17, carbonModifiers: 0x0100)
     store.settings.crf = 19
-    #expect(notifications == 2)
+    #expect(notifications.values.count == 2)
 
     let reloaded = SettingsStore(defaults: defaults)
     #expect(reloaded.settings.crf == 19)

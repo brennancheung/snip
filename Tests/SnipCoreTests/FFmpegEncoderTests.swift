@@ -102,7 +102,7 @@ func failedEncodeReportsStderr() async throws {
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["broken.mov"])
 }
 
-private final class Fractions: @unchecked Sendable {
+final class Fractions: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [Double] = []
     func append(_ value: Double) { lock.lock(); stored.append(value); lock.unlock() }
