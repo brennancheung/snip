@@ -2,14 +2,15 @@ import AppKit
 import SnipCore
 import SwiftUI
 
-/// Click, then press the new key combination. Escape or clicking elsewhere keeps the old one.
-/// Drawn like the Settings buttons, at the interface size.
+/// Click, then press the new key combination, or Delete for none. Escape or clicking elsewhere
+/// keeps the old one. Drawn like the Settings buttons, at the interface size.
 struct ShortcutField: NSViewRepresentable {
-    var hotKey: HotKeySpec
+    /// nil: no shortcut.
+    var hotKey: HotKeySpec?
     var scale: UIScale
-    /// True while waiting for keys, so the app can pause its own hotkey.
+    /// True while waiting for keys, so the app can pause its own hotkeys.
     var onRecordingChange: (Bool) -> Void
-    var onChange: (HotKeySpec) -> Void
+    var onChange: (HotKeySpec?) -> Void
 
     func makeNSView(context: Context) -> ShortcutButton {
         let button = ShortcutButton(scale: scale)
@@ -42,8 +43,8 @@ struct ShortcutField: NSViewRepresentable {
 
 final class ShortcutButton: BezelButton {
     var onRecordingChange: ((Bool) -> Void)?
-    var onChange: ((HotKeySpec) -> Void)?
-    var hotKey = HotKeySpec(keyCode: 0, carbonModifiers: 0) {
+    var onChange: ((HotKeySpec?) -> Void)?
+    var hotKey: HotKeySpec? {
         didSet { refreshTitle() }
     }
 
@@ -61,6 +62,7 @@ final class ShortcutButton: BezelButton {
         target = self
         action = #selector(clicked)
         minimumWidth = 110
+        toolTip = "Click, then type the new shortcut. Delete removes it."
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -95,6 +97,11 @@ final class ShortcutButton: BezelButton {
             isRecording = false
             return
         }
+        if keyCode == 51 || keyCode == 117, modifiers == 0 {  // Delete, Forward Delete
+            isRecording = false
+            onChange?(nil)
+            return
+        }
         guard KeyCombo.isUsable(keyCode: keyCode, carbonModifiers: modifiers) else {
             NSSound.beep()
             return
@@ -104,6 +111,12 @@ final class ShortcutButton: BezelButton {
     }
 
     private func refreshTitle() {
-        text = isRecording ? "Type shortcut…" : KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
+        if isRecording {
+            text = "Type shortcut…"
+        } else if let hotKey {
+            text = KeyCombo.display(keyCode: hotKey.keyCode, carbonModifiers: hotKey.carbonModifiers)
+        } else {
+            text = "None"
+        }
     }
 }

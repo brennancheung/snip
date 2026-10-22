@@ -5,7 +5,7 @@ import SnipUI
 // it looks without recording. Nothing appears on screen and no settings change.
 //
 // usage: snip-ui-preview [folder] [percent ...] [video.mp4]
-//   folder defaults to ./snip-ui-preview, the sizes to 100 and 200. The video is the recording the
+//   folder defaults to ./snip-ui-preview, the sizes to 100 and 200. The video (or a .png) is what the
 //   after-recording panel ("done-panel") shows; without one, a short sample is made. Prints each PNG's path.
 
 MainActor.assumeIsolated {
@@ -13,7 +13,7 @@ MainActor.assumeIsolated {
     let folder = URL(fileURLWithPath: arguments.first ?? "snip-ui-preview", isDirectory: true)
     let rest = arguments.dropFirst()
     let percents = rest.compactMap(Double.init)
-    let video = rest.first { ["mp4", "mov"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+    let video = rest.first { ["mp4", "mov", "png"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
         .map { URL(fileURLWithPath: $0) }
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)

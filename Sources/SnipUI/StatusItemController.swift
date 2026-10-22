@@ -6,10 +6,12 @@ import SnipCore
 final class StatusItemController: NSObject, NSMenuDelegate {
     var onNewRecording: (() -> Void)?
     var onRecordLastArea: (() -> Void)?
+    var onAreaImage: (() -> Void)?
+    var onWindowImage: (() -> Void)?
     var onSettings: (() -> Void)?
     var onStop: (() -> Void)?
     /// Read each time the menu opens.
-    var hotKey: () -> HotKeySpec = { SettingsStore.shared.hotKey }
+    var hotKey: (Shortcut) -> HotKeySpec? = { SettingsStore.shared.hotKey(for: $0) }
     var hasLastArea: () -> Bool = { false }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -55,18 +57,26 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let idle = state == .idle
 
-        let spec = hotKey()
         let newItem = NSMenuItem(title: "New Recording", action: #selector(newRecording), keyEquivalent: "")
-        if let key = KeyCombo.keyEquivalent(keyCode: spec.keyCode) {
-            newItem.keyEquivalent = key
-            newItem.keyEquivalentModifierMask = KeyCombo.modifierFlags(carbon: spec.carbonModifiers)
-        }
+        showShortcut(.record, on: newItem)
         newItem.isEnabled = idle
         add(newItem)
 
         let last = NSMenuItem(title: "Record Last Area", action: #selector(recordLastArea), keyEquivalent: "")
         last.isEnabled = idle && hasLastArea()
         add(last)
+
+        menu.addItem(.separator())
+        let area = NSMenuItem(title: "Screenshot of Area", action: #selector(areaImage), keyEquivalent: "")
+        showShortcut(.areaImage, on: area)
+        area.isEnabled = idle
+        add(area)
+        let window = NSMenuItem(title: "Screenshot of Window", action: #selector(windowImage), keyEquivalent: "")
+        showShortcut(.windowImage, on: window)
+        window.isEnabled = idle
+        add(window)
+
+        menu.addItem(.separator())
 
         let audio = SettingsStore.shared.settings
         let microphone = NSMenuItem(title: "Microphone", action: #selector(toggleMicrophone), keyEquivalent: "")
@@ -85,6 +95,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 let entry = NSMenuItem(title: title, action: #selector(revealRecent(_:)), keyEquivalent: "")
                 entry.toolTip = recent.url.lastPathComponent
                 entry.representedObject = recent.url
+                let kind = DonePanelView.isImage(recent.url) ? "photo" : "video"
+                entry.image = NSImage(systemSymbolName: kind, accessibilityDescription: DonePanelView.isImage(recent.url) ? "Screenshot" : "Recording")
                 add(entry)
             }
         }
@@ -94,6 +106,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit Snip", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
+    }
+
+    /// Shows the shortcut's keys beside the item, if it has a shortcut.
+    private func showShortcut(_ shortcut: Shortcut, on entry: NSMenuItem) {
+        guard let spec = hotKey(shortcut), let key = KeyCombo.keyEquivalent(keyCode: spec.keyCode) else { return }
+        entry.keyEquivalent = key
+        entry.keyEquivalentModifierMask = KeyCombo.modifierFlags(carbon: spec.carbonModifiers)
     }
 
     private func add(_ entry: NSMenuItem) {
@@ -139,6 +158,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func newRecording() { onNewRecording?() }
     @objc private func recordLastArea() { onRecordLastArea?() }
+    @objc private func areaImage() { onAreaImage?() }
+    @objc private func windowImage() { onWindowImage?() }
     @objc private func settings() { onSettings?() }
 
     @objc private func toggleMicrophone() {

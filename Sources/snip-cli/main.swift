@@ -16,6 +16,7 @@ enum Help {
                       [--seconds 5] [--fps 30] [--crf 23] [--scale full|half] [--no-cursor]
                       [--mic] [--mic-toggles <s,s,...>] [--no-system-audio] [--system-audio-toggles <s,s,...>]
                       [--keep] [--out <path>]
+      snip-cli screenshot (--window <id> | --rect x,y,w,h [--display <id>] | --display <id>) [--out <path>]
 
       windows   lists recordable windows, front to back: id, app, title, size in points.
       displays  lists displays: id, size in points, pixel scale.
@@ -30,6 +31,9 @@ enum Help {
                 2 s, off at 4 s without --mic); --system-audio-toggles does the same for system
                 audio. Everything is mixed into one AAC track.
                 --keep leaves the intermediate movie and microphone files in place.
+      screenshot  saves a PNG of the window, region or display at native pixels, without the
+                cursor, and prints its path. --out as for record; the default is
+                "Snip <date>.png" in ~/Movies/snip.
     """
 }
 
@@ -309,6 +313,30 @@ func record(_ arguments: [String]) async {
 
 /// Encodes the intermediate to `--out` (a file, or a folder to name it in), or to a new
 /// "Snip <date>.mp4" in the output folder. Prints the final path on stdout.
+func screenshot(_ arguments: [String]) async {
+    let options = parseRecordOptions(arguments)
+    let output: URL
+    if let out = options.out {
+        var isDirectory: ObjCBool = false
+        let url = URL(fileURLWithPath: (out as NSString).expandingTildeInPath)
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        output = exists && isDirectory.boolValue ? OutputNaming.outputURL(in: url, ext: "png") : url
+    } else {
+        do {
+            output = OutputNaming.outputURL(in: try options.settings.createOutputDirectory(), ext: "png")
+        } catch {
+            fail("error: couldn't create \(options.settings.resolvedOutputDirectory.path): \(error.localizedDescription)")
+        }
+    }
+    do {
+        let picture = try await Screenshot.capture(options.target)
+        try Screenshot.writePNG(picture, to: output)
+    } catch {
+        report(error)
+    }
+    print(output.path)
+}
+
 func compress(_ media: RecordedMedia, out: String?, settings: RecordingSettings, keep: Bool) async {
     let intermediate = media.movie
     let output: URL
@@ -367,6 +395,7 @@ Task {
     case "windows": await listWindows()
     case "displays": listDisplays()
     case "record": await record(Array(arguments.dropFirst()))
+    case "screenshot": await screenshot(Array(arguments.dropFirst()))
     case "-h", "--help", "help": print(Help.usage)
     default: fail(Help.usage)
     }

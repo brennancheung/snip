@@ -9,10 +9,15 @@ final class SettingsWindowController {
     private let model: SettingsModel
     private var window: NSWindow?
 
-    /// `applyHotKey` registers the new shortcut and returns why if it can't be used.
-    /// `pauseHotKey` is called with true while the shortcut field waits for keys.
-    init(applyHotKey: @escaping (HotKeySpec) -> String?, pauseHotKey: @escaping (Bool) -> Void) {
-        model = SettingsModel(applyHotKey: applyHotKey, pauseHotKey: pauseHotKey)
+    /// `applyHotKey` registers and saves a shortcut's new keys (nil removes it) and returns why if
+    /// they can't be used. `pauseHotKeys` is called with true while a shortcut field waits for keys.
+    /// `hotKeyProblem` says why a saved shortcut isn't working, if it isn't.
+    init(
+        applyHotKey: @escaping (HotKeySpec?, Shortcut) -> String?,
+        pauseHotKeys: @escaping (Bool) -> Void,
+        hotKeyProblem: @escaping (Shortcut) -> String?
+    ) {
+        model = SettingsModel(applyHotKey: applyHotKey, pauseHotKeys: pauseHotKeys, hotKeyProblem: hotKeyProblem)
     }
 
     func show() {
@@ -37,20 +42,27 @@ final class SettingsModel: ObservableObject {
     @Published var settings: RecordingSettings {
         didSet { if settings != oldValue { SettingsStore.shared.settings = settings } }
     }
-    @Published private(set) var hotKey: HotKeySpec
+    /// Each shortcut's keys; a removed one has none.
+    @Published private(set) var hotKeys: [Shortcut: HotKeySpec] = [:]
     @Published var launchAtLogin: Bool
     @Published private(set) var microphones: [Microphone.Input] = []
 
-    private let applyHotKey: (HotKeySpec) -> String?
-    let pauseHotKey: (Bool) -> Void
+    private let applyHotKey: (HotKeySpec?, Shortcut) -> String?
+    let pauseHotKeys: (Bool) -> Void
+    private let hotKeyProblem: (Shortcut) -> String?
     private var settingsObserver: NSObjectProtocol?
 
-    init(applyHotKey: @escaping (HotKeySpec) -> String?, pauseHotKey: @escaping (Bool) -> Void) {
+    init(
+        applyHotKey: @escaping (HotKeySpec?, Shortcut) -> String?,
+        pauseHotKeys: @escaping (Bool) -> Void,
+        hotKeyProblem: @escaping (Shortcut) -> String?
+    ) {
         self.applyHotKey = applyHotKey
-        self.pauseHotKey = pauseHotKey
+        self.pauseHotKeys = pauseHotKeys
+        self.hotKeyProblem = hotKeyProblem
         settings = SettingsStore.shared.settings
-        hotKey = SettingsStore.shared.hotKey
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        loadHotKeys()
         // The menu's Microphone and System Audio items change settings while this window is open.
         settingsObserver = NotificationCenter.default.addObserver(forName: SettingsStore.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -62,7 +74,7 @@ final class SettingsModel: ObservableObject {
 
     func reload() {
         settings = SettingsStore.shared.settings
-        hotKey = SettingsStore.shared.hotKey
+        loadHotKeys()
         launchAtLogin = SMAppService.mainApp.status == .enabled
         microphones = Microphone.inputs()
     }
@@ -81,16 +93,33 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func setHotKey(_ spec: HotKeySpec) {
-        if let problem = applyHotKey(spec) {
+    private func loadHotKeys() {
+        var keys: [Shortcut: HotKeySpec] = [:]
+        for shortcut in Shortcut.allCases {
+            keys[shortcut] = SettingsStore.shared.hotKey(for: shortcut)
+        }
+        hotKeys = keys
+    }
+
+    /// New keys for `shortcut`, or nil to remove it.
+    func setHotKey(_ spec: HotKeySpec?, for shortcut: Shortcut) {
+        if let problem = applyHotKey(spec, shortcut) {
             let alert = NSAlert()
-            alert.messageText = "Snip can’t use \(KeyCombo.display(keyCode: spec.keyCode, carbonModifiers: spec.carbonModifiers))"
+            let keys = spec.map { KeyCombo.display(keyCode: $0.keyCode, carbonModifiers: $0.carbonModifiers) } ?? "no shortcut"
+            alert.messageText = "Snip can’t use \(keys)"
             alert.informativeText = problem
             alert.runModal()
             return
         }
-        hotKey = spec
-        SettingsStore.shared.hotKey = spec
+        loadHotKeys()
+    }
+
+    /// Why `shortcut` won't work as set: another app holds it, or a macOS shortcut that is on
+    /// takes the same keys first.
+    func hotKeyNote(for shortcut: Shortcut) -> String? {
+        if let problem = hotKeyProblem(shortcut) { return problem }
+        guard let spec = hotKeys[shortcut], let system = SystemShortcuts.conflict(with: spec) else { return nil }
+        return "macOS uses these keys for “\(system)”. Turn that off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots."
     }
 
     func setLaunchAtLogin(_ on: Bool) {
@@ -210,16 +239,6 @@ struct SettingsView: View {
                 Toggle("Copy to clipboard when done", isOn: $model.settings.copyToClipboard)
                     .toggleStyle(CentredSwitchStyle(scale: ui))
 
-                row("Shortcut", ui) {
-                    ShortcutField(
-                        hotKey: model.hotKey,
-                        scale: ui,
-                        onRecordingChange: { model.pauseHotKey($0) },
-                        onChange: { model.setHotKey($0) }
-                    )
-                    .fixedSize()
-                }
-
                 Toggle("Launch at login", isOn: Binding(
                     get: { model.launchAtLogin },
                     set: { model.setLaunchAtLogin($0) }
@@ -227,6 +246,17 @@ struct SettingsView: View {
                 .toggleStyle(CentredSwitchStyle(scale: ui))
             }
             .padding(.vertical, ui.metric(4))
+
+            Section {
+                Group {
+                    ForEach(Shortcut.allCases, id: \.self) { shortcut in
+                        shortcutRow(shortcut, ui)
+                    }
+                }
+                .padding(.vertical, ui.metric(4))
+            } header: {
+                Text("Shortcuts").font(ui.text(13, weight: .semibold))
+            }
         }
         .formStyle(.grouped)
         .font(ui.text(13))
@@ -235,6 +265,29 @@ struct SettingsView: View {
         // The window follows this size, so changing Interface size resizes it at once.
         .frame(width: ui.metric(460))
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// A shortcut's keys, and below them why they won't work, if they won't.
+    private func shortcutRow(_ shortcut: Shortcut, _ ui: UIScale) -> some View {
+        row(shortcut.title, ui) {
+            VStack(alignment: .trailing, spacing: ui.metric(4)) {
+                ShortcutField(
+                    hotKey: model.hotKeys[shortcut],
+                    scale: ui,
+                    onRecordingChange: { model.pauseHotKeys($0) },
+                    onChange: { model.setHotKey($0, for: shortcut) }
+                )
+                .fixedSize()
+                if let note = model.hotKeyNote(for: shortcut) {
+                    Text(note)
+                        .font(ui.text(11))
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: ui.metric(260), alignment: .trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 
     /// A labelled row with the label vertically centred on its control.
