@@ -1,7 +1,8 @@
 # Snip
 
 A small macOS menu bar app for recording short screen clips. Press **⇧⌘6**, click a window or drag
-a box, and when you stop, a small MP4 is in `~/Movies/snip` and on your clipboard.
+a box, and when you stop, a small MP4 is in `~/Movies/snip` and on your clipboard. It takes
+screenshots too: **⇧⌘4** to drag a box, **⇧⌘3** to click a window.
 
 ![A box drawn over a browser window, with Snip's bar under it: 1120 × 600, microphone and speaker toggles, Record and Cancel](docs/images/hero.webp)
 
@@ -23,6 +24,7 @@ What it does:
   that is usually several times smaller than the hardware encode.
 - Puts the file on the clipboard when it's done, ready to paste into a chat, an email or a GitHub
   comment.
+- Takes screenshots of a box or a window as PNGs, at native pixels and without the cursor.
 - Comes with `snip-cli`, which records from the command line with the same code.
 
 ## Using it
@@ -46,6 +48,18 @@ button.
 
 ![Recording: a red outline around the area and a pill under it with 0:12, microphone, speaker, Stop and a trash can](docs/images/recording.webp)
 
+### Screenshots
+
+Press **⇧⌘4** and drag a box: the picture is taken when you let go. Press **⇧⌘3** and click a
+window: you get that window alone, with transparent corners and no shadow, even if something
+covers it. Escape cancels either. The PNG goes to the same folder as recordings, on the clipboard
+too if that's on, and the same panel appears with it.
+
+macOS uses ⇧⌘3 and ⇧⌘4 for its own screenshots, and while those are on Snip never sees the keys.
+Turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots (Settings says so
+if they're on), or give Snip other keys. Another screenshot app holding the same keys (CleanShot,
+for one) needs its shortcut changed too.
+
 **4. Stop** with ⇧⌘6, the pill's **Stop** or the menu bar icon. The pill shows the compression
 progress, then the file lands in `~/Movies/snip` as `Snip 2026-10-19 at 14.03.22.mp4` and is
 copied to the clipboard.
@@ -61,7 +75,9 @@ file chip under it (or the video itself) straight into another app or onto a Fin
 
 | Key | When | What it does |
 | --- | --- | --- |
-| ⇧⌘6 | any time | Start a recording, or stop the one in progress (change it in Settings) |
+| ⇧⌘6 | any time | Start a recording, or stop the one in progress |
+| ⇧⌘4 | any time | Screenshot of a box |
+| ⇧⌘3 | any time | Screenshot of a window |
 | Click | choosing | Choose the highlighted window |
 | Drag | choosing | Draw a box |
 | Space, held | dragging a box | Move the box instead of resizing it |
@@ -71,15 +87,18 @@ file chip under it (or the video itself) straight into another app or onto a Fin
 | Return | box or window chosen | Record |
 | Escape | choosing, countdown | Cancel |
 
+The first three can be changed or removed in Settings.
+
 ### Menu bar
 
 The menu has **New Recording**, **Record Last Area** (the same window or box as last time, no
-selection step), **Microphone** and **System Audio** toggles, your recent recordings (choose one
-to show it in Finder), **Settings…** and **Quit Snip**.
+selection step), **Screenshot of Area** and **Screenshot of Window**, **Microphone** and **System
+Audio** toggles, your recent recordings and screenshots (choose one to show it in Finder),
+**Settings…** and **Quit Snip**.
 
 ### Settings
 
-<img src="docs/images/settings.webp" width="580" alt="Snip Settings: Interface size, Quality (CRF 23), Frame rate, Resolution, Show cursor, Microphone, System audio, Countdown, Save to, Copy to clipboard when done, Shortcut, Launch at login">
+<img src="docs/images/settings.webp" width="580" alt="Snip Settings: Interface size, Quality (CRF 23), Frame rate, Resolution, Show cursor, Microphone, System audio, Countdown, Save to, Copy to clipboard when done, Launch at login, and Shortcuts for Record, Screenshot of an area and Screenshot of a window">
 
 - **Interface size**: 100% to 250%, for Snip's own overlay, bar, pill and panels. Automatic picks
   200% on a 1x display wider than 5000 points (an 8K-wide monitor) and 100% elsewhere.
@@ -88,7 +107,10 @@ to show it in Finder), **Settings…** and **Quit Snip**.
   records at 1x, a quarter of the pixels.
 - **Show cursor**, **Microphone** (Off or an input device), **System audio**, **Countdown** (off,
   3 or 5 seconds), **Save to** (default `~/Movies/snip`), **Copy to clipboard when done**,
-  **Shortcut**, **Launch at login**.
+  **Launch at login**.
+- **Shortcuts**: Record, Screenshot of an area and Screenshot of a window. Click one and type the
+  new keys, or press Delete for none. A shortcut that won't work (macOS or another app has the
+  keys) says why in orange.
 
 ## Getting it running
 
@@ -177,6 +199,7 @@ snip-cli displays                                # displays: id, size in points,
 snip-cli record --window 4127 --seconds 5        # prints the path of the MP4
 snip-cli record --rect 100,100,640,360 --crf 28 --out ~/Desktop
 snip-cli record --display 1 --seconds 0 --mic    # until Ctrl-C, with the microphone
+snip-cli screenshot --window 4127                # prints the path of the PNG
 ```
 
 `snip-cli --help` lists every option (frame rate, scale, cursor, audio toggles at given seconds,

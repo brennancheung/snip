@@ -1,9 +1,12 @@
 import AppKit
 import AVKit
+import ImageIO
 import SnipCore
+import UniformTypeIdentifiers
 
-/// After a recording: the video ready to play, the file to drag out, and Copy File, Copy Path, Show
-/// in Finder, Open, Move to Trash. Floats beside the recorded area until ×, Escape or the next recording.
+/// After a recording or a screenshot: the video ready to play (or the picture), the file to drag
+/// out, and Copy File, Copy Path, Show in Finder, Open, Move to Trash. Floats beside the captured
+/// area until ×, Escape or the next capture.
 @MainActor
 final class DonePanel: NSObject {
     /// Becomes key when clicked, without activating Snip, so Escape reaches it.
@@ -27,8 +30,8 @@ final class DonePanel: NSObject {
 
     private let file: URL
     private let note: String?
-    /// Kept across rebuilds for a new interface size, so playback carries on.
-    private let player: AVPlayer
+    /// Kept across rebuilds for a new interface size, so playback carries on. nil for a picture.
+    private let player: AVPlayer?
     private let panel = Panel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                               backing: .buffered, defer: false)
     private var videoSize: CGSize?
@@ -40,7 +43,7 @@ final class DonePanel: NSObject {
     init(file: URL, note: String?) {
         self.file = file
         self.note = note
-        player = AVPlayer(url: file)
+        player = DonePanelView.isImage(file) ? nil : AVPlayer(url: file)
         super.init()
         panel.configureAsSnipOverlay(level: .floating)
         panel.hasShadow = true
@@ -52,7 +55,7 @@ final class DonePanel: NSObject {
     /// for a whole display. Without an area (the window closed), at the bottom of the mouse's screen.
     func show(near area: CGRect?, target: CaptureTarget?) {
         Task {
-            let size = await DonePanelView.videoSize(of: file)
+            let size = await DonePanelView.mediaSize(of: file)
             guard !closed else { return }
             videoSize = size
             let mouse = NSEvent.mouseLocation
@@ -70,8 +73,8 @@ final class DonePanel: NSObject {
         guard !closed else { return }
         closed = true
         NotificationCenter.default.removeObserver(self)
-        player.pause()
-        player.replaceCurrentItem(with: nil)
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
         panel.orderOut(nil)
         onClose?()
     }
@@ -151,7 +154,7 @@ final class DonePanel: NSObject {
 /// fallback note if any, and the buttons.
 /// Built from a file alone, so it can be rendered off-screen:
 ///
-///     let view = DonePanelView(file: url, videoSize: await DonePanelView.videoSize(of: url))
+///     let view = DonePanelView(file: url, videoSize: await DonePanelView.mediaSize(of: url))
 ///     view.frame.size = view.fittingSize
 ///
 /// Dragging it anywhere but the preview, the file chip and the buttons drags its window.
@@ -163,7 +166,7 @@ final class DonePanelView: NSVisualEffectView {
     let previewSize: CGSize
 
     private let file: URL
-    private let player: AVPlayer
+    private let player: AVPlayer?
     private let ui: UIScale
     private let preview: PreviewView
     private let chip: FileChip
@@ -171,14 +174,15 @@ final class DonePanelView: NSVisualEffectView {
     private let copyPathButton: ActionButton
     private var copiedReset: [ObjectIdentifier: Task<Void, Never>] = [:]
 
-    /// `videoSize`: the recording's size in pixels, for its aspect ratio (see `videoSize(of:)`).
-    /// `player`: one already playing `file`, to keep its position; by default a new one.
+    /// `videoSize`: the video's or picture's size in pixels, for its aspect ratio (see `mediaSize(of:)`).
+    /// `player`: one already playing `file`, to keep its position; by default a new one, or none
+    /// for a picture.
     /// `previewLimit`: the most room the preview may take, to fit a small screen.
     /// `scale`: the interface size, the saved one if nil.
     init(file: URL, videoSize: CGSize, note: String? = nil, player: AVPlayer? = nil, previewLimit: CGSize? = nil,
          scale: UIScale? = nil) {
         let ui = scale ?? .current
-        let player = player ?? AVPlayer(url: file)
+        let player = player ?? (Self.isImage(file) ? nil : AVPlayer(url: file))
         // The buttons first: their row sets the panel's narrowest width.
         let copyFile = ActionButton(title: Self.copyFileLabel.title, symbol: Self.copyFileLabel.symbol,
                                     reserving: "Copied", ui: ui)
@@ -254,9 +258,23 @@ final class DonePanelView: NSVisualEffectView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    /// The size of the recording's video track, rotation applied; 16:9 if it can't be read.
-    static func videoSize(of file: URL) async -> CGSize {
+    /// Whether `file` is a picture (a screenshot) rather than a video.
+    static func isImage(_ file: URL) -> Bool {
+        UTType(filenameExtension: file.pathExtension)?.conforms(to: .image) ?? false
+    }
+
+    /// The picture's size in pixels, or the video track's with rotation applied; 16:9 if it can't be read.
+    static func mediaSize(of file: URL) async -> CGSize {
         let fallback = CGSize(width: 16, height: 9)
+        if isImage(file) {
+            guard
+                let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+                let height = properties[kCGImagePropertyPixelHeight] as? CGFloat, width > 0, height > 0
+            else { return fallback }
+            return CGSize(width: width, height: height)
+        }
         let asset = AVURLAsset(url: file)
         guard
             let track = try? await asset.loadTracks(withMediaType: .video).first,
@@ -267,8 +285,19 @@ final class DonePanelView: NSVisualEffectView {
         return CGSize(width: abs(rect.width), height: abs(rect.height))
     }
 
-    /// The first frame, rotation applied, at most 640 pixels on a side.
+    /// The first frame (or the picture), rotation applied, at most 640 pixels on a side.
     static func firstFrame(of file: URL) async -> NSImage? {
+        if isImage(file) {
+            let options = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 640,
+            ] as CFDictionary
+            guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options)
+            else { return nil }
+            return NSImage(cgImage: thumbnail, size: CGSize(width: thumbnail.width, height: thumbnail.height))
+        }
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 640, height: 640)
@@ -318,9 +347,7 @@ final class DonePanelView: NSVisualEffectView {
 
     /// Puts the file itself on the pasteboard, to paste into Finder, Slack or Mail.
     @objc private func copyFile() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects([file as NSURL])
+        Pasteboard.copy(file: file)
         showCopied(on: copyFileButton, then: Self.copyFileLabel)
     }
 
@@ -349,12 +376,12 @@ final class DonePanelView: NSVisualEffectView {
     }
 
     @objc private func openFile() {
-        player.pause()
+        player?.pause()
         NSWorkspace.shared.open(file)
     }
 
     @objc private func moveToTrash() {
-        player.pause()
+        player?.pause()
         let file = self.file
         Task { [weak self] in
             do {
@@ -450,29 +477,40 @@ private final class ActionButton: NSButton {
     }
 }
 
-/// The video with the player's inline controls (play/pause, scrub) and the close ×. Above the
-/// controls, a click plays or pauses and a drag drags the file out.
+/// The video with the player's inline controls (play/pause, scrub), or the picture, and the close ×.
+/// Above the controls a click plays or pauses; anywhere on a picture, or above a video's controls,
+/// a drag drags the file out.
 @MainActor
 private final class PreviewView: NSView {
     /// The player's inline control bar, which isn't scaled with the interface size.
     private static let controlsHeight: CGFloat = 48
 
     var onClose: (() -> Void)?
-    private let playerView = AVPlayerView()
+    /// The player, or the picture.
+    private let content: NSView
 
-    init(file: URL, player: AVPlayer, ui: UIScale) {
+    init(file: URL, player: AVPlayer?, ui: UIScale) {
+        if let player {
+            let playerView = AVPlayerView()
+            playerView.player = player
+            playerView.controlsStyle = .inline
+            playerView.videoGravity = .resizeAspect
+            playerView.showsFullScreenToggleButton = false
+            playerView.allowsPictureInPicturePlayback = false
+            playerView.showsSharingServiceButton = false
+            content = playerView
+        } else {
+            let imageView = NSImageView()
+            imageView.image = NSImage(contentsOf: file)
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            content = imageView
+        }
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.cornerRadius = ui.metric(6)
         layer?.masksToBounds = true
 
-        playerView.player = player
-        playerView.controlsStyle = .inline
-        playerView.videoGravity = .resizeAspect
-        playerView.showsFullScreenToggleButton = false
-        playerView.allowsPictureInPicturePlayback = false
-        playerView.showsSharingServiceButton = false
 
         let image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close") ?? NSImage()
         let configuration = NSImage.SymbolConfiguration(pointSize: ui.metric(16), weight: .regular)
@@ -483,22 +521,22 @@ private final class PreviewView: NSView {
         close.toolTip = "Close"
 
         let dragArea = FileDragView(file: file, ui: ui)
-        dragArea.onClick = { Self.togglePlayback(player) }
+        if let player { dragArea.onClick = { Self.togglePlayback(player) } }
         // In this order, so the × is on top of the drag area and the drag area on top of the video.
-        for view in [playerView, dragArea, close] {
+        for view in [content, dragArea, close] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         let inset = ui.metric(6)
         NSLayoutConstraint.activate([
-            playerView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            playerView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            playerView.topAnchor.constraint(equalTo: topAnchor),
-            playerView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
             dragArea.leadingAnchor.constraint(equalTo: leadingAnchor),
             dragArea.trailingAnchor.constraint(equalTo: trailingAnchor),
             dragArea.topAnchor.constraint(equalTo: topAnchor),
-            dragArea.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.controlsHeight),
+            dragArea.bottomAnchor.constraint(equalTo: bottomAnchor, constant: player == nil ? 0 : -Self.controlsHeight),
             close.topAnchor.constraint(equalTo: topAnchor, constant: inset),
             close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
         ])
@@ -511,7 +549,7 @@ private final class PreviewView: NSView {
         let still = NSImageView(image: image)
         still.imageScaling = .scaleProportionallyUpOrDown
         still.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(still, positioned: .above, relativeTo: playerView)
+        addSubview(still, positioned: .above, relativeTo: content)
         NSLayoutConstraint.activate([
             still.leadingAnchor.constraint(equalTo: leadingAnchor),
             still.trailingAnchor.constraint(equalTo: trailingAnchor),

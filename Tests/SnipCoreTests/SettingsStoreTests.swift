@@ -48,7 +48,7 @@ private func freshDefaults() -> UserDefaults {
     let defaults = freshDefaults()
     let store = SettingsStore(defaults: defaults)
     #expect(store.settings == RecordingSettings())
-    #expect(store.hotKey == HotKeySpec(keyCode: 0x16, carbonModifiers: 0x0300))
+    #expect(store.hotKey(for: .record) == HotKeySpec(keyCode: 0x16, carbonModifiers: 0x0300))
 
     let notifications = Fractions()
     let observer = NotificationCenter.default.addObserver(forName: SettingsStore.didChange, object: nil, queue: nil) { _ in
@@ -57,13 +57,30 @@ private func freshDefaults() -> UserDefaults {
     defer { NotificationCenter.default.removeObserver(observer) }
 
     store.settings.crf = 19
-    store.hotKey = HotKeySpec(keyCode: 0x17, carbonModifiers: 0x0100)
+    store.setHotKey(HotKeySpec(keyCode: 0x17, carbonModifiers: 0x0100), for: .record)
     store.settings.crf = 19
     #expect(notifications.values.count == 2)
 
     let reloaded = SettingsStore(defaults: defaults)
     #expect(reloaded.settings.crf == 19)
-    #expect(reloaded.hotKey == HotKeySpec(keyCode: 0x17, carbonModifiers: 0x0100))
+    #expect(reloaded.hotKey(for: .record) == HotKeySpec(keyCode: 0x17, carbonModifiers: 0x0100))
+}
+
+@Test func screenshotShortcutsDefaultAndCanBeRemoved() {
+    let defaults = freshDefaults()
+    // A record shortcut saved by an older build, under the key it has always used.
+    defaults.set(Data(#"{"keyCode": 23, "carbonModifiers": 256}"#.utf8), forKey: "hotKey")
+    let store = SettingsStore(defaults: defaults)
+    #expect(store.hotKey(for: .record) == HotKeySpec(keyCode: 23, carbonModifiers: 256))
+    #expect(store.hotKey(for: .areaImage) == HotKeySpec(keyCode: 0x15, carbonModifiers: 0x0300))
+    #expect(store.hotKey(for: .windowImage) == HotKeySpec(keyCode: 0x14, carbonModifiers: 0x0300))
+
+    store.setHotKey(nil, for: .windowImage)
+    store.setHotKey(HotKeySpec(keyCode: 0x13, carbonModifiers: 0x0300), for: .areaImage)
+    let reloaded = SettingsStore(defaults: defaults)
+    #expect(reloaded.hotKey(for: .windowImage) == nil)
+    #expect(reloaded.hotKey(for: .areaImage) == HotKeySpec(keyCode: 0x13, carbonModifiers: 0x0300))
+    #expect(reloaded.hotKey(for: .record) == HotKeySpec(keyCode: 23, carbonModifiers: 256))
 }
 
 @Test func recentRecordingsKeepFiveExistingFiles() throws {

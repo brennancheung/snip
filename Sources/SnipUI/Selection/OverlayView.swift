@@ -47,7 +47,9 @@ final class OverlayView: NSView {
     private var hintFaded = false
 
     /// `overlay` gets the mouse and keys; nil draws `apply`'s model and nothing more.
-    init(screen: ScreenInfo, overlay: SelectionOverlay?, scale: UIScale) {
+    /// `hint`: what the pill at the top says to do.
+    init(screen: ScreenInfo, overlay: SelectionOverlay?, scale: UIScale,
+         hint hintText: String = SelectionOverlay.Purpose.recording.hint) {
         self.screen = screen
         self.overlay = overlay
         ui = scale
@@ -82,7 +84,7 @@ final class OverlayView: NSView {
         root.addSublayer(label.layer)
         root.addSublayer(corner.layer)
         root.addSublayer(hint.layer)
-        hint.set("Click a window, or drag to select an area · esc to cancel")
+        hint.set(hintText)
 
         bar.isHidden = true
         bar.onRecord = { [weak self] in self?.overlay?.record() }

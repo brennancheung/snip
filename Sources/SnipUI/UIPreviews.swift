@@ -117,7 +117,7 @@ public enum UIPreviews {
 
     /// The Settings window's content as it is now, at `ui`.
     static func settings(_ ui: UIScale) -> NSView {
-        let model = SettingsModel(applyHotKey: { _ in nil }, pauseHotKey: { _ in })
+        let model = SettingsModel(applyHotKey: { _, _ in nil }, pauseHotKeys: { _ in }, hotKeyProblem: { _ in nil })
         model.reload()
         let hosting = NSHostingView(rootView: SettingsView(model: model, scaleOverride: ui))
         hosting.setFrameSize(hosting.fittingSize)
@@ -128,7 +128,7 @@ public enum UIPreviews {
     /// (an off-screen render doesn't draw video or AVKit's controls).
     static func donePanel(_ ui: UIScale) -> NSView {
         guard let video = sampleVideo else { return NSView() }
-        let size = wait { await DonePanelView.videoSize(of: video) } ?? CGSize(width: 16, height: 9)
+        let size = wait { await DonePanelView.mediaSize(of: video) } ?? CGSize(width: 16, height: 9)
         let view = DonePanelView(file: video, videoSize: size, scale: ui)
         if let still = wait({ await DonePanelView.firstFrame(of: video) }) ?? nil {
             view.showStill(still)
@@ -251,6 +251,11 @@ public enum UIPreviews {
             context.setFillColor(background.cgColor)
         }
         context.fill(CGRect(origin: .zero, size: size))
+        // A flipped root layer (SwiftUI's grouped Form with more than one section) would draw upside down.
+        if layer.isGeometryFlipped {
+            context.translateBy(x: 0, y: size.height)
+            context.scaleBy(x: 1, y: -1)
+        }
         layer.render(in: context)
         guard let image = context.makeImage(),
               let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])

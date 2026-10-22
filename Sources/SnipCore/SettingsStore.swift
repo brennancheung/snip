@@ -1,7 +1,7 @@
 import Foundation
 
 /// The global hotkey as Carbon `RegisterEventHotKey` takes it. SnipUI registers it.
-public struct HotKeySpec: Codable, Equatable, Sendable {
+public struct HotKeySpec: Codable, Hashable, Sendable {
     /// A virtual key code (`kVK_*`).
     public var keyCode: UInt32
     /// Carbon modifier flags (`cmdKey`, `shiftKey`, `optionKey`, `controlKey`).
@@ -16,25 +16,68 @@ public struct HotKeySpec: Codable, Equatable, Sendable {
     public static let `default` = HotKeySpec(keyCode: 0x16, carbonModifiers: 0x0100 | 0x0200)
 }
 
-/// The saved `RecordingSettings` and hotkey, kept in UserDefaults as JSON.
-/// Setting either saves it and posts `SettingsStore.didChange`.
+/// What each global shortcut does. Each can be set in Settings, or removed.
+public enum Shortcut: String, CaseIterable, Sendable {
+    /// Start a recording, cancel its countdown, or stop it.
+    case record
+    /// Drag a box and save a picture of it.
+    case areaImage
+    /// Click a window and save a picture of it.
+    case windowImage
+
+    /// Its name in Settings and messages.
+    public var title: String {
+        switch self {
+        case .record: return "Record"
+        case .areaImage: return "Screenshot of an area"
+        case .windowImage: return "Screenshot of a window"
+        }
+    }
+
+    /// ⇧⌘6, ⇧⌘4 and ⇧⌘3.
+    public var defaultSpec: HotKeySpec {
+        let commandShift: UInt32 = 0x0100 | 0x0200
+        switch self {
+        case .record: return .default
+        case .areaImage: return HotKeySpec(keyCode: 0x15, carbonModifiers: commandShift)  // kVK_ANSI_4
+        case .windowImage: return HotKeySpec(keyCode: 0x14, carbonModifiers: commandShift)  // kVK_ANSI_3
+        }
+    }
+
+    /// The record shortcut keeps the key older builds saved it under.
+    var storageKey: String {
+        switch self {
+        case .record: return "hotKey"
+        case .areaImage: return "areaImageHotKey"
+        case .windowImage: return "windowImageHotKey"
+        }
+    }
+}
+
+/// The saved `RecordingSettings` and shortcuts, kept in UserDefaults as JSON.
+/// Setting any of them saves it and posts `SettingsStore.didChange`.
 public final class SettingsStore: @unchecked Sendable {
     public static let shared = SettingsStore()
-    /// Posted (object: the store) after `settings` or `hotKey` changes.
+    /// Posted (object: the store) after `settings` or a shortcut changes.
     public static let didChange = Notification.Name("SnipSettingsDidChange")
 
     static let settingsKey = "recordingSettings"
-    static let hotKeyKey = "hotKey"
 
     private let defaults: UserDefaults
     private let lock = NSLock()
     private var storedSettings: RecordingSettings
-    private var storedHotKey: HotKeySpec
+    /// nil: removed in Settings.
+    private var storedShortcuts: [Shortcut: HotKeySpec?]
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         storedSettings = Self.load(RecordingSettings.self, key: Self.settingsKey, from: defaults) ?? RecordingSettings()
-        storedHotKey = Self.load(HotKeySpec.self, key: Self.hotKeyKey, from: defaults) ?? .default
+        var shortcuts: [Shortcut: HotKeySpec?] = [:]
+        for shortcut in Shortcut.allCases {
+            // Never saved: the default. Saved as null: removed.
+            shortcuts[shortcut] = Self.load(HotKeySpec?.self, key: shortcut.storageKey, from: defaults) ?? shortcut.defaultSpec
+        }
+        storedShortcuts = shortcuts
     }
 
     public var settings: RecordingSettings {
@@ -42,9 +85,15 @@ public final class SettingsStore: @unchecked Sendable {
         set { update(\.storedSettings, to: newValue, key: Self.settingsKey) }
     }
 
-    public var hotKey: HotKeySpec {
-        get { lock.withLock { storedHotKey } }
-        set { update(\.storedHotKey, to: newValue, key: Self.hotKeyKey) }
+    /// The keys for `shortcut`, or nil if it was removed.
+    public func hotKey(for shortcut: Shortcut) -> HotKeySpec? {
+        lock.withLock { storedShortcuts[shortcut] ?? nil }
+    }
+
+    /// Sets the keys for `shortcut`; nil removes it.
+    public func setHotKey(_ spec: HotKeySpec?, for shortcut: Shortcut) {
+        // Every shortcut has an entry, so the outer optional is always there; null is saved for nil.
+        update(\.storedShortcuts[shortcut], to: .some(spec), key: shortcut.storageKey)
     }
 
     private func update<Value: Codable & Equatable>(

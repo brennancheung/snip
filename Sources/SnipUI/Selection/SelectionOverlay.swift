@@ -3,9 +3,27 @@ import Carbon.HIToolbox
 import SnipCore
 
 /// Dims every display and lets the user pick what to record: click a window, drag a box, or press
-/// Space for the whole display. The pick ends at a bar with Record and Cancel.
+/// Space for the whole display. The pick ends at a bar with Record and Cancel. For a screenshot
+/// there is no bar: letting go of the box, or clicking the window, is the pick.
 @MainActor
 public final class SelectionOverlay {
+    public enum Purpose: Sendable {
+        /// A window, a box or the display, then Record.
+        case recording
+        /// A box only, taken as soon as it is drawn.
+        case areaImage
+        /// A window only, taken as soon as it is clicked.
+        case windowImage
+
+        var hint: String {
+            switch self {
+            case .recording: "Click a window, or drag to select an area · esc to cancel"
+            case .areaImage: "Drag to select an area for a screenshot · esc to cancel"
+            case .windowImage: "Click a window for a screenshot · esc to cancel"
+            }
+        }
+    }
+
     private enum Pick {
         case region(CGRect, screen: Int)
         case window(OverlayWindow, screen: Int)
@@ -67,7 +85,11 @@ public final class SelectionOverlay {
     private var screenObserver: NSObjectProtocol?
     private var resignObserver: NSObjectProtocol?
 
-    public init() {}
+    private let purpose: Purpose
+
+    public init(purpose: Purpose = .recording) {
+        self.purpose = purpose
+    }
 
     /// Shows the overlay on every display and returns what the user chose, or nil on Escape.
     /// The overlay is gone before this returns. Calling it again while it's open cancels the first call.
@@ -100,7 +122,7 @@ public final class SelectionOverlay {
 
         for (screen, info) in zip(nsScreens, screens) {
             let panel = OverlayPanel(screen: screen)
-            let view = OverlayView(screen: info, overlay: self, scale: ui)
+            let view = OverlayView(screen: info, overlay: self, scale: ui, hint: purpose.hint)
             panel.contentView = view
             panel.makeFirstResponder(view)
             panels.append(panel)
@@ -204,7 +226,7 @@ public final class SelectionOverlay {
         self.shift = shift
         switch mode {
         case .pressing(let start, let screen, _):
-            guard hypot(p.x - start.x, p.y - start.y) > Self.dragThreshold else { return }
+            guard purpose != .windowImage, hypot(p.x - start.x, p.y - start.y) > Self.dragThreshold else { return }
             hintVisible = false
             mode = .drawing(start: start, screen: screen, rect: drawnRect(from: start, to: p, screen: screen), offset: .zero)
             render()
@@ -241,7 +263,10 @@ public final class SelectionOverlay {
         pointer = p
         switch mode {
         case .pressing(_, _, let previous):
-            if let under = window(at: p) {
+            if let under = window(at: p), purpose == .windowImage {
+                finish(.window(windowID: under.id))
+                return
+            } else if let under = window(at: p) {
                 select(.window(under, screen: screenIndex(of: under)), back: nil)
             } else if let previous {
                 select(previous, back: nil)
@@ -250,7 +275,10 @@ public final class SelectionOverlay {
                 render()
             }
         case .drawing(_, let screen, let rect, _):
-            if Self.isUsable(rect) {
+            if Self.isUsable(rect), purpose == .areaImage {
+                finish(target(for: .region(rect, screen: screen)))
+                return
+            } else if Self.isUsable(rect) {
                 select(.region(rect, screen: screen), back: nil)
             } else {
                 mode = .hover(window(at: p))
@@ -290,7 +318,8 @@ public final class SelectionOverlay {
                 // The mouse is down: hold to move the box instead of resizing it.
                 spaceHeld = true
             default:
-                toggleDisplay()
+                // A screenshot is a box or a window; the whole display is for recording.
+                if purpose == .recording { toggleDisplay() }
             }
         default:
             break
@@ -377,9 +406,11 @@ public final class SelectionOverlay {
 
     // MARK: Lookup
 
-    /// The topmost window under `p`. `windows` is front to back.
+    /// The topmost window under `p`. `windows` is front to back. None for an area screenshot,
+    /// which only draws boxes.
     private func window(at p: CGPoint) -> OverlayWindow? {
-        windows.first { $0.frame.contains(p) }
+        guard purpose != .areaImage else { return nil }
+        return windows.first { $0.frame.contains(p) }
     }
 
     private func screenIndex(at p: CGPoint) -> Int {

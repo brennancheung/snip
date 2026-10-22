@@ -93,7 +93,7 @@ struct CapturePlan {
         return configuration
     }
 
-    private static func findDisplay(_ displayID: CGDirectDisplayID, in content: SCShareableContent) throws -> SCDisplay {
+    static func findDisplay(_ displayID: CGDirectDisplayID, in content: SCShareableContent) throws -> SCDisplay {
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw SnipCaptureError.displayNotFound(displayID)
         }
@@ -101,7 +101,7 @@ struct CapturePlan {
     }
 
     /// The whole display minus Snip's own windows (the recording pill and red border must not be in the video).
-    private static func displayFilter(_ display: SCDisplay, content: SCShareableContent) -> SCContentFilter {
+    static func displayFilter(_ display: SCDisplay, content: SCShareableContent) -> SCContentFilter {
         let ownPID = ProcessInfo.processInfo.processIdentifier
         let ownApps = content.applications.filter { $0.processID == ownPID }
         if !ownApps.isEmpty {
@@ -112,7 +112,7 @@ struct CapturePlan {
         return SCContentFilter(display: display, excludingWindows: ownWindows)
     }
 
-    private static func pixelScale(of filter: SCContentFilter, fallbackDisplay: CGDirectDisplayID?) -> CGFloat {
+    static func pixelScale(of filter: SCContentFilter, fallbackDisplay: CGDirectDisplayID?) -> CGFloat {
         let scale = CGFloat(filter.pointPixelScale)
         if scale > 0 { return scale }
         return fallbackDisplay.map(Displays.backingScale(of:)) ?? 2

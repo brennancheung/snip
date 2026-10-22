@@ -3,6 +3,7 @@ import SnipCapture
 import SnipCore
 
 /// Owns the app's state machine: idle → selecting → countingDown → recording → encoding → finished.
+/// A screenshot goes idle → selecting → idle.
 @MainActor
 public final class AppController: NSObject, NSApplicationDelegate {
     private var state: RecorderState = .idle {
@@ -11,7 +12,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
 
     private var statusItem: StatusItemController?
     private var settingsWindow: SettingsWindowController?
-    private var hotKey: HotKey?
+    private var hotKeys: [Shortcut: HotKey] = [:]
+    /// Why a saved shortcut couldn't be registered (another app holds it), for Settings to show.
+    private(set) var hotKeyProblems: [Shortcut: String] = [:]
 
     /// The last area recorded, for Record Last Area.
     private var lastTarget: CaptureTarget?
@@ -33,54 +36,93 @@ public final class AppController: NSObject, NSApplicationDelegate {
         let statusItem = StatusItemController()
         statusItem.onNewRecording = { [weak self] in self?.newRecording() }
         statusItem.onRecordLastArea = { [weak self] in self?.recordLastArea() }
+        statusItem.onAreaImage = { [weak self] in self?.newScreenshot(.areaImage) }
+        statusItem.onWindowImage = { [weak self] in self?.newScreenshot(.windowImage) }
         statusItem.onSettings = { [weak self] in self?.showSettings() }
         statusItem.onStop = { [weak self] in self?.stop() }
         statusItem.hasLastArea = { [weak self] in self?.lastTarget != nil }
         self.statusItem = statusItem
 
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: SettingsStore.didChange, object: nil)
-        applyHotKey(SettingsStore.shared.hotKey)
+        registerSavedHotKeys()
         // Older builds asked only once and remembered it here.
         UserDefaults.standard.removeObject(forKey: "askedForScreenRecording")
         requestScreenRecordingIfMissing()
     }
 
-    // MARK: Hotkey
+    // MARK: Hotkeys
 
-    /// Registers `spec` as the global shortcut. If it can't, keeps the old one and returns why.
+    /// Registers every saved shortcut. One another app holds is left off, noted in `hotKeyProblems`.
+    private func registerSavedHotKeys() {
+        for shortcut in Shortcut.allCases {
+            hotKeys[shortcut]?.unregister()
+            hotKeys[shortcut] = nil
+            hotKeyProblems[shortcut] = nil
+            guard let spec = SettingsStore.shared.hotKey(for: shortcut) else { continue }
+            do {
+                hotKeys[shortcut] = try register(spec, for: shortcut)
+            } catch {
+                hotKeyProblems[shortcut] = Self.describe(error)
+                NSLog("Snip: \(shortcut.title) shortcut not registered: \(Self.describe(error))")
+            }
+        }
+    }
+
+    /// Registers `spec` for `shortcut` (nil removes it) and saves it. If it can't, keeps the old
+    /// one and returns why.
     @discardableResult
-    private func applyHotKey(_ spec: HotKeySpec) -> String? {
-        hotKey?.unregister()
-        do {
-            hotKey = try HotKey(keyCode: spec.keyCode, carbonModifiers: spec.carbonModifiers) { [weak self] in
-                self?.hotKeyPressed()
+    private func applyHotKey(_ spec: HotKeySpec?, for shortcut: Shortcut) -> String? {
+        if let spec, let other = Shortcut.allCases.first(where: { $0 != shortcut && SettingsStore.shared.hotKey(for: $0) == spec }) {
+            return "Snip already uses it for \(other.title)."
+        }
+        hotKeys[shortcut]?.unregister()
+        hotKeys[shortcut] = nil
+        if let spec {
+            do {
+                hotKeys[shortcut] = try register(spec, for: shortcut)
+            } catch {
+                if let current = SettingsStore.shared.hotKey(for: shortcut) {
+                    hotKeys[shortcut] = try? register(current, for: shortcut)
+                }
+                return Self.describe(error)
             }
-            return nil
-        } catch {
-            let current = SettingsStore.shared.hotKey
-            hotKey = try? HotKey(keyCode: current.keyCode, carbonModifiers: current.carbonModifiers) { [weak self] in
-                self?.hotKeyPressed()
-            }
-            return (error as? HotKey.RegistrationError)?.description ?? error.localizedDescription
+        }
+        hotKeyProblems[shortcut] = nil
+        SettingsStore.shared.setHotKey(spec, for: shortcut)
+        return nil
+    }
+
+    private func register(_ spec: HotKeySpec, for shortcut: Shortcut) throws -> HotKey {
+        try HotKey(keyCode: spec.keyCode, carbonModifiers: spec.carbonModifiers) { [weak self] in
+            self?.hotKeyPressed(shortcut)
         }
     }
 
-    /// While the Settings shortcut field waits for keys, the old shortcut must not fire.
-    private func pauseHotKey(_ paused: Bool) {
+    private static func describe(_ error: Error) -> String {
+        (error as? HotKey.RegistrationError)?.description ?? error.localizedDescription
+    }
+
+    /// While a Settings shortcut field waits for keys, none of Snip's shortcuts may fire.
+    private func pauseHotKeys(_ paused: Bool) {
         if paused {
-            hotKey?.unregister()
-            hotKey = nil
-        } else if hotKey == nil {
-            applyHotKey(SettingsStore.shared.hotKey)
+            for hotKey in hotKeys.values { hotKey.unregister() }
+            hotKeys = [:]
+        } else if hotKeys.isEmpty {
+            registerSavedHotKeys()
         }
     }
 
-    private func hotKeyPressed() {
-        switch state {
-        case .idle: newRecording()
-        case .countingDown: countdown?.cancel()
-        case .recording: stop()
-        default: break  // selecting, encoding: nothing
+    private func hotKeyPressed(_ shortcut: Shortcut) {
+        switch shortcut {
+        case .record:
+            switch state {
+            case .idle: newRecording()
+            case .countingDown: countdown?.cancel()
+            case .recording: stop()
+            default: break  // selecting, encoding: nothing
+            }
+        case .areaImage: newScreenshot(.areaImage)
+        case .windowImage: newScreenshot(.windowImage)
         }
     }
 
@@ -98,6 +140,33 @@ public final class AppController: NSObject, NSApplicationDelegate {
                 return
             }
             await record(target)
+        }
+    }
+
+    /// Picks a box or a window, saves a PNG of it to the output folder, and shows it in the panel.
+    private func newScreenshot(_ purpose: SelectionOverlay.Purpose) {
+        guard state == .idle else { return }
+        guard hasScreenRecordingPermission() else { return }
+        donePanel?.close()
+        state = .selecting
+        Task {
+            guard let target = await SelectionOverlay(purpose: purpose).choose() else {
+                state = .idle
+                return
+            }
+            let area = ScreenGeometry.appKitRect(for: target)
+            do {
+                let picture = try await Screenshot.capture(target)
+                let folder = try SettingsStore.shared.settings.createOutputDirectory()
+                let output = OutputNaming.outputURL(in: folder, ext: "png")
+                try Screenshot.writePNG(picture, to: output)
+                state = .idle
+                if SettingsStore.shared.settings.copyToClipboard { Pasteboard.copy(file: output) }
+                RecentRecordings().add(url: output)
+                showDonePanel(output, note: nil, near: area, target: target)
+            } catch {
+                fail(error.localizedDescription, title: "Snip couldn’t take the screenshot")
+            }
         }
     }
 
@@ -266,34 +335,30 @@ public final class AppController: NSObject, NSApplicationDelegate {
         pill = nil
         state = .finished(output: output)
 
-        if SettingsStore.shared.settings.copyToClipboard {
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.writeObjects([output as NSURL])
-        }
+        if SettingsStore.shared.settings.copyToClipboard { Pasteboard.copy(file: output) }
         RecentRecordings().add(url: output)
-        showDonePanel(output, note: note)
+        showDonePanel(output, note: note, near: lastTarget.flatMap(ScreenGeometry.appKitRect(for:)), target: lastTarget)
         state = .idle
     }
 
-    /// Beside the recorded area, where the pill was.
-    private func showDonePanel(_ output: URL, note: String?) {
+    /// Beside the captured area (where the pill was, for a recording).
+    private func showDonePanel(_ output: URL, note: String?, near area: CGRect?, target: CaptureTarget?) {
         let panel = DonePanel(file: output, note: note)
         panel.onClose = { [weak self, weak panel] in
             if self?.donePanel === panel { self?.donePanel = nil }
         }
         donePanel = panel
-        panel.show(near: lastTarget.flatMap(ScreenGeometry.appKitRect(for:)), target: lastTarget)
+        panel.show(near: area, target: target)
     }
 
-    private func fail(_ message: String) {
+    private func fail(_ message: String, title: String = "Snip couldn’t record") {
         endRecordingChrome(keepPill: false)
         countdown?.cancel()
         countdown = nil
         state = .failed(message: message)
 
         let alert = NSAlert()
-        alert.messageText = "Snip couldn’t record"
+        alert.messageText = title
         alert.informativeText = message
         NSApp.activate()
         alert.runModal()
@@ -317,8 +382,9 @@ public final class AppController: NSObject, NSApplicationDelegate {
     private func showSettings() {
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(
-                applyHotKey: { [weak self] spec in self?.applyHotKey(spec) },
-                pauseHotKey: { [weak self] paused in self?.pauseHotKey(paused) }
+                applyHotKey: { [weak self] spec, shortcut in self?.applyHotKey(spec, for: shortcut) },
+                pauseHotKeys: { [weak self] paused in self?.pauseHotKeys(paused) },
+                hotKeyProblem: { [weak self] shortcut in self?.hotKeyProblems[shortcut] }
             )
         }
         settingsWindow?.show()
