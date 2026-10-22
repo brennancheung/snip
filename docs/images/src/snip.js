@@ -168,11 +168,17 @@ window.donePanel = async (video) => {
   const data = pixels(await loadUI('done-panel'));
   const v = data.data;
   const at = (x, y) => { const i = (y * data.width + x) * 4; return [v[i], v[i + 1], v[i + 2]]; };
-  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  // The video is the frame's blue: rows and columns that are mostly blue, so a stray blue pixel
+  // elsewhere (the file chip's icon) doesn't count.
+  const rows = new Array(data.height).fill(0), cols = new Array(data.width).fill(0);
   for (let y = 0; y < data.height; y++) for (let x = 0; x < data.width; x++) {
     const [r, , b] = at(x, y);
-    if (b - r > 20) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    if (b - r > 20) { rows[y]++; cols[x]++; }
   }
+  const first = (counts, min) => counts.findIndex((n) => n >= min);
+  const last = (counts, min) => counts.length - 1 - [...counts].reverse().findIndex((n) => n >= min);
+  const x0 = first(cols, data.height / 4), x1 = last(cols, data.height / 4);
+  const y0 = first(rows, data.width / 4), y1 = last(rows, data.width / 4);
   const frameColour = at(x1 - 4, y1 - 4);
   // The video's corners are rounded, 6 points (12 render pixels).
   const inVideo = (x, y) => {

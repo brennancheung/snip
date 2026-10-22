@@ -2,8 +2,8 @@ import AppKit
 import AVKit
 import SnipCore
 
-/// After a recording: the video ready to play, its name and size, and Copy, Show in Finder, Open,
-/// Move to Trash. Floats beside the recorded area until ×, Escape or the next recording.
+/// After a recording: the video ready to play, the file to drag out, and Copy File, Copy Path, Show
+/// in Finder, Open, Move to Trash. Floats beside the recorded area until ×, Escape or the next recording.
 @MainActor
 final class DonePanel: NSObject {
     /// Becomes key when clicked, without activating Snip, so Escape reaches it.
@@ -147,13 +147,14 @@ final class DonePanel: NSObject {
     }
 }
 
-/// The panel's content: the video, its name and size, the fallback note if any, and the buttons.
+/// The panel's content: the video, the file chip (its name and size, dragged to drag the file), the
+/// fallback note if any, and the buttons.
 /// Built from a file alone, so it can be rendered off-screen:
 ///
 ///     let view = DonePanelView(file: url, videoSize: await DonePanelView.videoSize(of: url))
 ///     view.frame.size = view.fittingSize
 ///
-/// Dragging it anywhere but the preview and buttons drags its window.
+/// Dragging it anywhere but the preview, the file chip and the buttons drags its window.
 @MainActor
 final class DonePanelView: NSVisualEffectView {
     /// After × or Move to Trash.
@@ -165,8 +166,10 @@ final class DonePanelView: NSVisualEffectView {
     private let player: AVPlayer
     private let ui: UIScale
     private let preview: PreviewView
-    private let copyButton: ActionButton
-    private var copiedReset: Task<Void, Never>?
+    private let chip: FileChip
+    private let copyFileButton: ActionButton
+    private let copyPathButton: ActionButton
+    private var copiedReset: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     /// `videoSize`: the recording's size in pixels, for its aspect ratio (see `videoSize(of:)`).
     /// `player`: one already playing `file`, to keep its position; by default a new one.
@@ -177,10 +180,15 @@ final class DonePanelView: NSVisualEffectView {
         let ui = scale ?? .current
         let player = player ?? AVPlayer(url: file)
         // The buttons first: their row sets the panel's narrowest width.
-        let copy = ActionButton(title: "Copy", symbol: "doc.on.doc", reserving: "Copied", ui: ui)
-        copyButton = copy
+        let copyFile = ActionButton(title: Self.copyFileLabel.title, symbol: Self.copyFileLabel.symbol,
+                                    reserving: "Copied", ui: ui)
+        let copyPath = ActionButton(title: Self.copyPathLabel.title, symbol: Self.copyPathLabel.symbol,
+                                    reserving: "Copied", ui: ui)
+        copyFileButton = copyFile
+        copyPathButton = copyPath
         let actions: [(ActionButton, Selector)] = [
-            (copy, #selector(DonePanelView.copyFile)),
+            (copyFile, #selector(DonePanelView.copyFile)),
+            (copyPath, #selector(DonePanelView.copyPath)),
             (ActionButton(title: "Show in Finder", symbol: "folder", ui: ui), #selector(DonePanelView.showInFinder)),
             (ActionButton(title: "Open", symbol: "arrow.up.forward.app", ui: ui), #selector(DonePanelView.openFile)),
             (ActionButton(title: "Move to Trash", symbol: "trash", ui: ui), #selector(DonePanelView.moveToTrash)),
@@ -194,6 +202,7 @@ final class DonePanelView: NSVisualEffectView {
         self.player = player
         self.ui = ui
         preview = PreviewView(file: file, player: player, ui: ui)
+        chip = FileChip(file: file, size: Self.formattedSize(of: file), ui: ui)
         super.init(frame: .zero)
 
         material = .hudWindow
@@ -206,24 +215,13 @@ final class DonePanelView: NSVisualEffectView {
 
         preview.onClose = { [weak self] in self?.onClose?() }
 
-        let name = NSTextField(labelWithString: file.lastPathComponent)
-        name.font = ui.font(13, weight: .medium)
-        name.lineBreakMode = .byTruncatingMiddle
-        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let bytes = NSTextField(labelWithString: Self.formattedSize(of: file))
-        bytes.font = ui.font(11)
-        bytes.textColor = .secondaryLabelColor
-        bytes.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let info = NSStackView(views: [name, bytes])
-        info.alignment = .firstBaseline
-        info.spacing = ui.metric(8)
 
         for (button, action) in actions {
             button.target = self
             button.action = action
         }
 
-        var rows: [NSView] = [preview, info]
+        var rows: [NSView] = [preview, chip]
         if let note {
             let label = NSTextField(wrappingLabelWithString: note)
             label.font = ui.font(11)
@@ -304,7 +302,7 @@ final class DonePanelView: NSVisualEffectView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        return hit is NSButton || hit.isDescendant(of: preview) ? hit : self
+        return hit is NSButton || hit.isDescendant(of: preview) || hit.isDescendant(of: chip) ? hit : self
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -315,17 +313,34 @@ final class DonePanelView: NSVisualEffectView {
 
     // MARK: Buttons
 
-    /// Puts the file on the pasteboard, and says "Copied" on the button for a moment.
+    private static let copyFileLabel = (title: "Copy File", symbol: "doc.on.doc")
+    private static let copyPathLabel = (title: "Copy Path", symbol: "link")
+
+    /// Puts the file itself on the pasteboard, to paste into Finder, Slack or Mail.
     @objc private func copyFile() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.writeObjects([file as NSURL])
-        copyButton.show(title: "Copied", symbol: "checkmark")
-        copiedReset?.cancel()
-        copiedReset = Task { [weak self] in
+        showCopied(on: copyFileButton, then: Self.copyFileLabel)
+    }
+
+    /// Puts the file's full path on the pasteboard as text, to paste into a terminal or a chat.
+    @objc private func copyPath() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(file.path, forType: .string)
+        showCopied(on: copyPathButton, then: Self.copyPathLabel)
+    }
+
+    /// Says "Copied" on `button` for a moment, then puts its own label back.
+    private func showCopied(on button: ActionButton, then label: (title: String, symbol: String)) {
+        button.show(title: "Copied", symbol: "checkmark")
+        let key = ObjectIdentifier(button)
+        copiedReset[key]?.cancel()
+        copiedReset[key] = Task { [weak button] in
             try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled, let self else { return }
-            copyButton.show(title: "Copy", symbol: "doc.on.doc")
+            guard !Task.isCancelled, let button else { return }
+            button.show(title: label.title, symbol: label.symbol)
         }
     }
 
@@ -467,7 +482,8 @@ private final class PreviewView: NSView {
         close.isBordered = false
         close.toolTip = "Close"
 
-        let dragArea = FileDragArea(file: file, player: player, ui: ui)
+        let dragArea = FileDragView(file: file, ui: ui)
+        dragArea.onClick = { Self.togglePlayback(player) }
         // In this order, so the × is on top of the drag area and the drag area on top of the video.
         for view in [playerView, dragArea, close] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -505,23 +521,33 @@ private final class PreviewView: NSView {
     }
 
     @objc private func closeClicked() { onClose?() }
+
+    private static func togglePlayback(_ player: AVPlayer) {
+        guard player.rate == 0 else {
+            player.pause()
+            return
+        }
+        if let item = player.currentItem, item.duration.isNumeric, item.currentTime() >= item.duration {
+            player.seek(to: .zero)
+        }
+        player.play()
+    }
 }
 
-/// Over the video: a click plays or pauses, a drag drags the file itself (as a file URL), so it
-/// drops into Finder, Slack, Mail or a browser upload.
+/// A drag drags the file itself (as a file URL), so it drops into Finder, Slack, Mail or a browser
+/// upload; a click calls `onClick`. Over the video, and under the file chip.
 @MainActor
-private final class FileDragArea: NSView, NSDraggingSource {
-    private let file: URL
-    private let player: AVPlayer
-    private let ui: UIScale
+private class FileDragView: NSView, NSDraggingSource {
+    var onClick: (() -> Void)?
+    let file: URL
+    let ui: UIScale
     /// The mouse-down of a click or drag in progress.
     private var mouseDownEvent: NSEvent?
     /// The first frame, for the drag image.
     private var thumbnail: NSImage?
 
-    init(file: URL, player: AVPlayer, ui: UIScale) {
+    init(file: URL, ui: UIScale) {
         self.file = file
-        self.player = player
         self.ui = ui
         super.init(frame: .zero)
         Task { [weak self] in
@@ -559,22 +585,109 @@ private final class FileDragArea: NSView, NSDraggingSource {
     override func mouseUp(with event: NSEvent) {
         guard mouseDownEvent != nil else { return }
         mouseDownEvent = nil
-        togglePlayback()
+        onClick?()
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         // A copy, so dropping into a Finder folder never moves the recording out of the output folder.
         context == .outsideApplication ? .copy : []
     }
+}
 
-    private func togglePlayback() {
-        guard player.rate == 0 else {
-            player.pause()
-            return
-        }
-        if let item = player.currentItem, item.duration.isNumeric, item.currentTime() >= item.duration {
-            player.seek(to: .zero)
-        }
-        player.play()
+/// The file as something to pick up: its icon, name and size on a rounded fill, with an open hand
+/// under the pointer. Drag it into another app instead of going through Finder.
+@MainActor
+private final class FileChip: FileDragView {
+    private var hovering = false {
+        didSet { needsDisplay = true }
+    }
+
+    init(file: URL, size: String, ui: UIScale) {
+        super.init(file: file, ui: ui)
+        let icon = NSImageView(image: NSWorkspace.shared.icon(forFile: file.path))
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        let name = NSTextField(labelWithString: file.lastPathComponent)
+        name.font = ui.font(13, weight: .medium)
+        name.lineBreakMode = .byTruncatingMiddle
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let bytes = NSTextField(labelWithString: size)
+        bytes.font = ui.font(11)
+        bytes.textColor = .secondaryLabelColor
+        bytes.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let hand = NSImageView()
+        let symbol = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: nil)
+        hand.image = symbol?.withSymbolConfiguration(.init(pointSize: ui.metric(12), weight: .regular)) ?? symbol
+        hand.contentTintColor = .secondaryLabelColor
+        hand.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let drag = NSTextField(labelWithString: "Drag")
+        drag.font = ui.font(11)
+        drag.textColor = .secondaryLabelColor
+        drag.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        // The drag hint at the right edge.
+        let row = NSStackView()
+        row.setViews([icon, name, bytes], in: .leading)
+        row.setViews([hand, drag], in: .trailing)
+        row.alignment = .centerY
+        row.spacing = ui.metric(8)
+        row.setCustomSpacing(ui.metric(6), after: icon)
+        row.setCustomSpacing(ui.metric(4), after: hand)
+        row.edgeInsets = NSEdgeInsets(top: 0, left: ui.metric(6), bottom: 0, right: ui.metric(10))
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: ui.metric(22)),
+            icon.heightAnchor.constraint(equalToConstant: ui.metric(22)),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: ui.metric(32)),
+        ])
+        toolTip = "Drag into any app, or onto a folder in Finder"
+        setAccessibilityLabel(file.lastPathComponent)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    // The icon and labels are parts of the chip, not targets of their own.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        frame.contains(point) ? self : nil
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        // Active always: the panel doesn't activate Snip, so it is rarely the key window.
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        NSCursor.openHand.set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        NSCursor.arrow.set()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        NSCursor.closedHand.set()
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        (hovering ? NSCursor.openHand : NSCursor.arrow).set()
+        super.mouseUp(with: event)
+    }
+
+    override var wantsUpdateLayer: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let radius = ui.metric(6)
+        let path = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
+        NSColor.labelColor.withAlphaComponent(hovering ? 0.16 : 0.08).setFill()
+        path.fill()
     }
 }

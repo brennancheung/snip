@@ -50,11 +50,12 @@ button.
 progress, then the file lands in `~/Movies/snip` as `Snip 2026-10-19 at 14.03.22.mp4` and is
 copied to the clipboard.
 
-**5. After recording,** a panel appears where the pill was. Click the video to play it, drag it
-into another app, or use **Copy**, **Show in Finder**, **Open** or **Move to Trash**. × or Escape
-closes the panel; the file stays.
+**5. After recording,** a panel appears where the pill was. Click the video to play it. Drag the
+file chip under it (or the video itself) straight into another app or onto a Finder folder, or use
+**Copy File**, **Copy Path** (the file's full path as text), **Show in Finder**, **Open** or
+**Move to Trash**. × or Escape closes the panel; the file stays.
 
-![The after-recording panel: a preview of the recording, its name and size, and Copy, Show in Finder, Open and Move to Trash buttons](docs/images/after-recording.webp)
+![The after-recording panel: a preview of the recording, a draggable chip with its name and size, and Copy File, Copy Path, Show in Finder, Open and Move to Trash buttons](docs/images/after-recording.webp)
 
 ### Shortcuts
 
