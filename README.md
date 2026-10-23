@@ -67,7 +67,7 @@ copied to the clipboard.
 **5. After recording,** a panel appears where the pill was. Click the video to play it. Drag the
 file chip under it (or the video itself) straight into another app or onto a Finder folder, or use
 **Copy File**, **Copy Path** (the file's full path as text), **Show in Finder**, **Open** or
-**Move to Trash**. × or Escape closes the panel; the file stays.
+**Move to Trash**. ×, Escape or a click anywhere else closes the panel; the file stays.
 
 ![The after-recording panel: a preview of the recording, a draggable chip with its name and size, and Copy File, Copy Path, Show in Finder, Open and Move to Trash buttons](docs/images/after-recording.webp)
 
@@ -86,6 +86,7 @@ file chip under it (or the video itself) straight into another app or onto a Fin
 | Right-click | box drawn | Go back to picking a window |
 | Return | box or window chosen | Record |
 | Escape | choosing, countdown | Cancel |
+| Escape | after-capture panel showing | Close the panel |
 
 The first three can be changed or removed in Settings.
 

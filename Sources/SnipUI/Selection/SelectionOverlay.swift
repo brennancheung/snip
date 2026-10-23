@@ -81,7 +81,6 @@ public final class SelectionOverlay {
     private var spaceHeld = false
     /// The interface size, read when the overlay opens.
     private var ui = UIScale(1)
-    private var previousApp: NSRunningApplication?
     private var screenObserver: NSObjectProtocol?
     private var resignObserver: NSObjectProtocol?
 
@@ -118,7 +117,6 @@ public final class SelectionOverlay {
         shift = false
         spaceHeld = false
         mode = .hover(window(at: pointer))
-        previousApp = NSWorkspace.shared.frontmostApplication
 
         for (screen, info) in zip(nsScreens, screens) {
             let panel = OverlayPanel(screen: screen)
@@ -130,7 +128,6 @@ public final class SelectionOverlay {
         }
         render()
 
-        NSApp.activate()
         for panel in panels { panel.orderFrontRegardless() }
         panels[hintScreen].makeKeyAndOrderFront(nil)
         NSCursor.crosshair.set()
@@ -142,9 +139,9 @@ public final class SelectionOverlay {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.finish(nil) }
         }
-        // Losing focus loses the key up, so treat it as Space released.
+        // Losing the keys loses the key up, so treat it as Space released.
         resignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
+            forName: NSWindow.didResignKeyNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -173,10 +170,6 @@ public final class SelectionOverlay {
         resignObserver = nil
         spaceHeld = false
         NSCursor.arrow.set()
-        if let previousApp, previousApp != NSRunningApplication.current {
-            previousApp.activate(options: [])
-        }
-        previousApp = nil
     }
 
     // MARK: Events from the views (global AppKit coordinates)
