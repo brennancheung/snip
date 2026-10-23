@@ -44,6 +44,9 @@ final class DonePanel: NSObject {
     private var escapeKey: HotKey?
     /// While the panel shows: a click in another app or on the desktop closes it.
     private var outsideClicks: Any?
+    /// The same for a click in one of Snip's own windows, such as Settings, which the global
+    /// monitor never sees.
+    private var snipClicks: Any?
 
     /// `note`: why the file wasn't compressed, when the encode fell back to the .mov.
     init(file: URL, note: String?) {
@@ -74,6 +77,12 @@ final class DonePanel: NSObject {
             outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
                 MainActor.assumeIsolated { self?.close() }
             }
+            snipClicks = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                MainActor.assumeIsolated {
+                    if let self, event.window !== self.panel { self.close() }
+                }
+                return event
+            }
             NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged),
                                                    name: SettingsStore.didChange, object: nil)
         }
@@ -87,6 +96,8 @@ final class DonePanel: NSObject {
         escapeKey = nil
         if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
         outsideClicks = nil
+        if let snipClicks { NSEvent.removeMonitor(snipClicks) }
+        snipClicks = nil
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         panel.orderOut(nil)
