@@ -114,12 +114,18 @@ final class SettingsModel: ObservableObject {
         loadHotKeys()
     }
 
-    /// Why `shortcut` won't work as set: another app holds it, or a macOS shortcut that is on
-    /// takes the same keys first.
+    /// Why `shortcut` won't work as set: another app holds it, a macOS shortcut that is on takes
+    /// the same keys first, or CleanShot X catches them too.
     func hotKeyNote(for shortcut: Shortcut) -> String? {
         if let problem = hotKeyProblem(shortcut) { return problem }
-        guard let spec = hotKeys[shortcut], let system = SystemShortcuts.conflict(with: spec) else { return nil }
-        return "macOS uses these keys for “\(system)”. Turn that off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots."
+        guard let spec = hotKeys[shortcut] else { return nil }
+        if let system = SystemShortcuts.conflict(with: spec) {
+            return "macOS uses these keys for “\(system)”. Turn that off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots."
+        }
+        if SystemShortcuts.cleanShotHolds(spec) {
+            return "CleanShot X uses these keys too, and takes the first drag. Change them in CleanShot X’s Settings › Shortcuts."
+        }
+        return nil
     }
 
     func setLaunchAtLogin(_ on: Bool) {

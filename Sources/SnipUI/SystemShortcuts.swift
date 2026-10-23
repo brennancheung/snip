@@ -44,4 +44,21 @@ enum SystemShortcuts {
         }
         return nil
     }
+
+    /// Whether CleanShot X has a shortcut on the keys of `spec`. It catches them alongside Snip, so
+    /// its capture takes the first drag. Its shortcuts are saved as JSON data under keys starting
+    /// with LAVA, such as `{"carbonModifiers":768,"carbonKey":21}` for ⇧⌘4.
+    static func cleanShotHolds(_ spec: HotKeySpec) -> Bool {
+        guard let saved = UserDefaults(suiteName: "pl.maketheweb.cleanshotx")?.dictionaryRepresentation() else { return false }
+        return saved.contains { key, value in
+            guard key.hasPrefix("LAVA"), let data = value as? Data,
+                  let keys = try? JSONDecoder().decode(CleanShotKeys.self, from: data) else { return false }
+            return keys.carbonKey == spec.keyCode && keys.carbonModifiers == spec.carbonModifiers
+        }
+    }
+
+    private struct CleanShotKeys: Decodable {
+        let carbonKey: UInt32
+        let carbonModifiers: UInt32
+    }
 }

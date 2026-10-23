@@ -57,8 +57,9 @@ too if that's on, and the same panel appears with it.
 
 macOS uses ⇧⌘3 and ⇧⌘4 for its own screenshots, and while those are on Snip never sees the keys.
 Turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots (Settings says so
-if they're on), or give Snip other keys. Another screenshot app holding the same keys (CleanShot,
-for one) needs its shortcut changed too.
+if they're on), or give Snip other keys. Another screenshot app holding the same keys needs its
+shortcut changed too: CleanShot X catches them alongside Snip and takes the first drag (Settings
+says so for CleanShot X as well).
 
 **4. Stop** with ⇧⌘6, the pill's **Stop** or the menu bar icon. The pill shows the compression
 progress, then the file lands in `~/Movies/snip` as `Snip 2026-10-19 at 14.03.22.mp4` and is
