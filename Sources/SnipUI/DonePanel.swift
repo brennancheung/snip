@@ -1,12 +1,13 @@
 import AppKit
 import AVKit
+import Carbon.HIToolbox
 import ImageIO
 import SnipCore
 import UniformTypeIdentifiers
 
 /// After a recording or a screenshot: the video ready to play (or the picture), the file to drag
 /// out, and Copy File, Copy Path, Show in Finder, Open, Move to Trash. Floats beside the captured
-/// area until ×, Escape or the next capture.
+/// area until ×, Escape, a click anywhere else or the next capture.
 @MainActor
 final class DonePanel: NSObject {
     /// Becomes key when clicked, without activating Snip, so Escape reaches it.
@@ -38,6 +39,14 @@ final class DonePanel: NSObject {
     /// The interface size the content was built at.
     private var ui = UIScale.current
     private var closed = false
+    /// While the panel shows: Escape closes it even though the keys go to the app in front, which
+    /// keeps them so ⌘V pastes the screenshot straight away.
+    private var escapeKey: HotKey?
+    /// While the panel shows: a click in another app or on the desktop closes it.
+    private var outsideClicks: Any?
+    /// The same for a click in one of Snip's own windows, such as Settings, which the global
+    /// monitor never sees.
+    private var snipClicks: Any?
 
     /// `note`: why the file wasn't compressed, when the encode fell back to the .mov.
     init(file: URL, note: String?) {
@@ -64,6 +73,16 @@ final class DonePanel: NSObject {
             build(on: screen)
             place(near: area, target: target, on: screen)
             panel.orderFrontRegardless()
+            escapeKey = try? HotKey(keyCode: UInt32(kVK_Escape), carbonModifiers: 0) { [weak self] in self?.close() }
+            outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+                MainActor.assumeIsolated { self?.close() }
+            }
+            snipClicks = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                MainActor.assumeIsolated {
+                    if let self, event.window !== self.panel { self.close() }
+                }
+                return event
+            }
             NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged),
                                                    name: SettingsStore.didChange, object: nil)
         }
@@ -73,6 +92,12 @@ final class DonePanel: NSObject {
         guard !closed else { return }
         closed = true
         NotificationCenter.default.removeObserver(self)
+        escapeKey?.unregister()
+        escapeKey = nil
+        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
+        outsideClicks = nil
+        if let snipClicks { NSEvent.removeMonitor(snipClicks) }
+        snipClicks = nil
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         panel.orderOut(nil)

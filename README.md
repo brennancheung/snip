@@ -57,8 +57,9 @@ too if that's on, and the same panel appears with it.
 
 macOS uses ⇧⌘3 and ⇧⌘4 for its own screenshots, and while those are on Snip never sees the keys.
 Turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots (Settings says so
-if they're on), or give Snip other keys. Another screenshot app holding the same keys (CleanShot,
-for one) needs its shortcut changed too.
+if they're on), or give Snip other keys. Another screenshot app holding the same keys needs its
+shortcut changed too: CleanShot X catches them alongside Snip and takes the first drag (Settings
+says so for CleanShot X as well).
 
 **4. Stop** with ⇧⌘6, the pill's **Stop** or the menu bar icon. The pill shows the compression
 progress, then the file lands in `~/Movies/snip` as `Snip 2026-10-19 at 14.03.22.mp4` and is
@@ -67,7 +68,7 @@ copied to the clipboard.
 **5. After recording,** a panel appears where the pill was. Click the video to play it. Drag the
 file chip under it (or the video itself) straight into another app or onto a Finder folder, or use
 **Copy File**, **Copy Path** (the file's full path as text), **Show in Finder**, **Open** or
-**Move to Trash**. × or Escape closes the panel; the file stays.
+**Move to Trash**. ×, Escape or a click anywhere else closes the panel; the file stays.
 
 ![The after-recording panel: a preview of the recording, a draggable chip with its name and size, and Copy File, Copy Path, Show in Finder, Open and Move to Trash buttons](docs/images/after-recording.webp)
 
@@ -86,6 +87,7 @@ file chip under it (or the video itself) straight into another app or onto a Fin
 | Right-click | box drawn | Go back to picking a window |
 | Return | box or window chosen | Record |
 | Escape | choosing, countdown | Cancel |
+| Escape | after-capture panel showing | Close the panel |
 
 The first three can be changed or removed in Settings.
 
