@@ -16,7 +16,34 @@ public enum Screenshot {
     }
 
     public static func capture(_ target: CaptureTarget) async throws -> Picture {
-        let content = try await ShareableContent.fetch(onScreenWindowsOnly: false)
+        try await capture(target, in: ShareableContent.fetch(onScreenWindowsOnly: false))
+    }
+
+    /// Every display as it is now, for an area screenshot taken from a frozen screen: the box is
+    /// drawn over these pictures and cut from them, so the app underneath never sees the pointer
+    /// move and keeps its hover state. A display that fails is left out, and is captured live.
+    public static func freeze() async -> [CGDirectDisplayID: Picture] {
+        guard let content = try? await ShareableContent.fetch(onScreenWindowsOnly: false) else { return [:] }
+        var pictures: [CGDirectDisplayID: Picture] = [:]
+        for display in content.displays {
+            pictures[display.displayID] = try? await capture(.display(displayID: display.displayID), in: content)
+        }
+        return pictures
+    }
+
+    /// The part of a display's picture inside `rect` (display-relative points, top-left origin),
+    /// on the same whole device pixels a live capture of that region takes.
+    public static func crop(_ picture: Picture, to rect: CGRect) throws -> Picture {
+        let scale = picture.scale
+        let bounds = CGRect(x: 0, y: 0, width: CGFloat(picture.image.width) / scale, height: CGFloat(picture.image.height) / scale)
+        let pixels = try devicePixels(of: rect, within: bounds, scale: scale)
+        guard let image = picture.image.cropping(to: pixels) else {
+            throw SnipCaptureError.captureFailed("Couldn't cut the area from the frozen screen.")
+        }
+        return Picture(image: image, scale: scale)
+    }
+
+    private static func capture(_ target: CaptureTarget, in content: SCShareableContent) async throws -> Picture {
         let configuration = SCStreamConfiguration()
         configuration.showsCursor = false
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
@@ -51,16 +78,10 @@ public enum Screenshot {
             filter = CapturePlan.displayFilter(display, content: content)
             scale = CapturePlan.pixelScale(of: filter, fallbackDisplay: displayID)
             let bounds = CGRect(x: 0, y: 0, width: display.width, height: display.height)
-            let clipped = rect.standardized.intersection(bounds)
-            guard !clipped.isNull, clipped.width * scale >= 1, clipped.height * scale >= 1 else {
-                throw SnipCaptureError.regionOutsideDisplay(rect)
-            }
-            // Whole device pixels, mapped 1:1, so text stays sharp.
-            let x0 = (clipped.minX * scale).rounded(), y0 = (clipped.minY * scale).rounded()
-            let x1 = max((clipped.maxX * scale).rounded(), x0 + 1), y1 = max((clipped.maxY * scale).rounded(), y0 + 1)
-            configuration.sourceRect = CGRect(x: x0 / scale, y: y0 / scale, width: (x1 - x0) / scale, height: (y1 - y0) / scale)
-            configuration.width = Int(x1 - x0)
-            configuration.height = Int(y1 - y0)
+            let pixels = try devicePixels(of: rect, within: bounds, scale: scale)
+            configuration.sourceRect = CGRect(x: pixels.minX / scale, y: pixels.minY / scale, width: pixels.width / scale, height: pixels.height / scale)
+            configuration.width = Int(pixels.width)
+            configuration.height = Int(pixels.height)
         }
 
         do {
@@ -82,6 +103,18 @@ public enum Screenshot {
         guard CGImageDestinationFinalize(destination) else {
             throw SnipCaptureError.captureFailed("Couldn't write \(url.lastPathComponent).")
         }
+    }
+
+    /// `rect` clipped to `bounds` (points) and snapped to whole device pixels, at least one, so
+    /// it maps 1:1 and text stays sharp. In pixels, top-left origin.
+    private static func devicePixels(of rect: CGRect, within bounds: CGRect, scale: CGFloat) throws -> CGRect {
+        let clipped = rect.standardized.intersection(bounds)
+        guard !clipped.isNull, clipped.width * scale >= 1, clipped.height * scale >= 1 else {
+            throw SnipCaptureError.regionOutsideDisplay(rect)
+        }
+        let x0 = (clipped.minX * scale).rounded(), y0 = (clipped.minY * scale).rounded()
+        let x1 = max((clipped.maxX * scale).rounded(), x0 + 1), y1 = max((clipped.maxY * scale).rounded(), y0 + 1)
+        return CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
     }
 
     private static func pixels(_ value: CGFloat) -> Int {

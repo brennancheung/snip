@@ -4,7 +4,8 @@ import SnipCore
 
 /// Dims every display and lets the user pick what to record: click a window, drag a box, or press
 /// Space for the whole display. The pick ends at a bar with Record and Cancel. For a screenshot
-/// there is no bar: letting go of the box, or clicking the window, is the pick.
+/// there is no bar: letting go of the box, or clicking the window, is the pick. With backdrops,
+/// each display shows its frozen picture instead of the live screen.
 @MainActor
 public final class SelectionOverlay {
     public enum Purpose: Sendable {
@@ -85,9 +86,12 @@ public final class SelectionOverlay {
     private var resignObserver: NSObjectProtocol?
 
     private let purpose: Purpose
+    /// Each display's frozen picture, drawn under the dimming in place of the live screen.
+    private let backdrops: [CGDirectDisplayID: CGImage]
 
-    public init(purpose: Purpose = .recording) {
+    public init(purpose: Purpose = .recording, backdrops: [CGDirectDisplayID: CGImage] = [:]) {
         self.purpose = purpose
+        self.backdrops = backdrops
     }
 
     /// Shows the overlay on every display and returns what the user chose, or nil on Escape.
@@ -120,7 +124,7 @@ public final class SelectionOverlay {
 
         for (screen, info) in zip(nsScreens, screens) {
             let panel = OverlayPanel(screen: screen)
-            let view = OverlayView(screen: info, overlay: self, scale: ui, hint: purpose.hint)
+            let view = OverlayView(screen: info, overlay: self, scale: ui, hint: purpose.hint, backdrop: backdrops[info.displayID])
             panel.contentView = view
             panel.makeFirstResponder(view)
             panels.append(panel)

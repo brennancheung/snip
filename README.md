@@ -50,7 +50,9 @@ button.
 
 ### Screenshots
 
-Press **⇧⌘4** and drag a box: the picture is taken when you let go. Press **⇧⌘3** and click a
+Press **⇧⌘4** and drag a box: the picture is taken when you let go. The screen freezes as you
+press the keys and the box is cut from that, so a menu or a hover state that was showing stays in
+the picture. Press **⇧⌘3** and click a
 window: you get that window alone, with transparent corners and no shadow, even if something
 covers it. Escape cancels either. The PNG goes to the same folder as recordings, on the clipboard
 too if that's on, and the same panel appears with it.
