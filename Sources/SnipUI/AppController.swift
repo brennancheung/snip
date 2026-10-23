@@ -150,13 +150,21 @@ public final class AppController: NSObject, NSApplicationDelegate {
         donePanel?.close()
         state = .selecting
         Task {
-            guard let target = await SelectionOverlay(purpose: purpose).choose() else {
+            // An area is cut from the screen as it was when the shortcut fired, so whatever the
+            // pointer was hovering stays hovered while the box is dragged.
+            let frozen = purpose == .areaImage ? await Screenshot.freeze() : [:]
+            guard let target = await SelectionOverlay(purpose: purpose, backdrops: frozen.mapValues(\.image)).choose() else {
                 state = .idle
                 return
             }
             let area = ScreenGeometry.appKitRect(for: target)
             do {
-                let picture = try await Screenshot.capture(target)
+                let picture: Screenshot.Picture
+                if case .region(let displayID, let rect) = target, let still = frozen[displayID] {
+                    picture = try Screenshot.crop(still, to: rect)
+                } else {
+                    picture = try await Screenshot.capture(target)
+                }
                 let folder = try SettingsStore.shared.settings.createOutputDirectory()
                 let output = OutputNaming.outputURL(in: folder, ext: "png")
                 try Screenshot.writePNG(picture, to: output)

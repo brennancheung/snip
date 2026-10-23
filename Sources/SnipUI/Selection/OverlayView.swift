@@ -47,9 +47,9 @@ final class OverlayView: NSView {
     private var hintFaded = false
 
     /// `overlay` gets the mouse and keys; nil draws `apply`'s model and nothing more.
-    /// `hint`: what the pill at the top says to do.
+    /// `hint`: what the pill at the top says to do. `backdrop`: the frozen screen, drawn under it all.
     init(screen: ScreenInfo, overlay: SelectionOverlay?, scale: UIScale,
-         hint hintText: String = SelectionOverlay.Purpose.recording.hint) {
+         hint hintText: String = SelectionOverlay.Purpose.recording.hint, backdrop: CGImage? = nil) {
         self.screen = screen
         self.overlay = overlay
         ui = scale
@@ -65,6 +65,13 @@ final class OverlayView: NSView {
         canvas.autoresizingMask = [.width, .height]
         addSubview(canvas)
         let root = canvas.layer!
+        if let backdrop {
+            let still = CALayer()
+            still.contents = backdrop
+            still.contentsGravity = .resize
+            still.frame = bounds
+            root.addSublayer(still)
+        }
         let dim = NSColor.black.withAlphaComponent(0.35).cgColor
         for layer in dims {
             layer.backgroundColor = dim
